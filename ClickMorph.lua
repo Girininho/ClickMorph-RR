@@ -288,9 +288,9 @@ function CM.MorphTransmogSet()
 			return
 		end
 
-		-- Undress inteligente - só remove slots que o set vai ocupar
 		local sourceIDs = C_TransmogSets.GetAllSourceIDs(setID)
 		if sourceIDs then
+			-- Undress inteligente
 			local slotsToUndress = {}
 			for _, sourceID in pairs(sourceIDs) do
 				local sourceInfo = C_TransmogCollection.GetSourceInfo(sourceID)
@@ -302,7 +302,6 @@ function CM.MorphTransmogSet()
 				end
 			end
 			
-			-- Só remove itens dos slots que o set vai usar
 			local morphForUndress = CM:CanMorph(true)
 			if morphForUndress and morphForUndress.item then
 				for slotID in pairs(slotsToUndress) do
@@ -310,17 +309,21 @@ function CM.MorphTransmogSet()
 				end
 			end
 			
-			-- Aplicar itens do conjunto
+			-- Aplicar conjunto com ModIDs corretos
 			for _, sourceID in pairs(sourceIDs) do
 				local sourceInfo = C_TransmogCollection.GetSourceInfo(sourceID)
 				if sourceInfo and sourceInfo.itemID then
 					local slotID = C_Transmog.GetSlotForInventoryType(sourceInfo.invType)
 					if slotID then
-						morph.item("player", slotID, sourceInfo.itemID)
+						local itemModID = sourceInfo.itemModID or 0
+						morph.item("player", slotID, sourceInfo.itemID, itemModID)
 					end
 				end
 			end
-			CM:PrintChat(format("itemset -> %d %s", setID, setInfo.name))
+			
+			-- Print melhorado
+			local description = setInfo.description or "Normal"
+			CM:PrintChat(format("set -> %s (%s)", setInfo.name, description))
 		else
 			CM:PrintChat("Could not get set sources", 1, 1, 0)
 		end
