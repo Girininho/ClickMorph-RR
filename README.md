@@ -1,8 +1,8 @@
-# ClickMorph-WoW
+# ClickMorph-WoW - Retail Fix
 
 This version includes fixes and updates for Retail WoW (11.x) for personal use, but may be useful for anyone who finds manually looking up every ID tedious and misses the Alt+Shift+Click morphing convenience.  
 
-ClickMorph lets you alt-click to morph with [iMorph](https://www.ownedcore.com/forums/wow-classic/wow-classic-general/799754-wow-classic-morpher.html) or [jMorph](https://www.ownedcore.com/forums/world-of-warcraft/world-of-warcraft-bots-programs/795619-jmorph-tmorph-morpher-recreated.html).  
+ClickMorph lets you Alt+Shift-Click to morph with [iMorph](https://www.ownedcore.com/forums/wow-classic/wow-classic-general/799754-wow-classic-morpher.html) or [jMorph](https://www.ownedcore.com/forums/world-of-warcraft/world-of-warcraft-bots-programs/795619-jmorph-tmorph-morpher-recreated.html).  
 **Note:** It is _not_ standalone; you must load a morpher first.
 
 ---
