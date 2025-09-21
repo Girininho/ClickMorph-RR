@@ -128,6 +128,13 @@ CM.morphers = {
 		race = function(_, raceID, genderID)
 			if SetRace then SetRace(raceID, genderID) end
 		end,
+enchant = function(_, slotID, visualID)
+	if SetEnchant then 
+		local command = string.format("enchant %d %d", slotID, visualID)
+		ChatFrame1EditBox:SetText("." .. command)
+		ChatEdit_SendText(ChatFrame1EditBox, 0)
+	end
+end,
 		mount = function(_, displayID)
 			if CM:CanMorphMount() and SetMount then
 				SetMount(displayID)
@@ -203,13 +210,18 @@ end
 function CM:MorphItem(unit, item, silent)
 	local morph = CM:CanMorph()
 	if item and morph and morph.item and not IsLooting() then
-		local itemID, itemLink, equipLoc = CM:GetItemInfo(item)
+		-- Verificação de segurança
+		local success, itemID, itemLink, equipLoc = pcall(CM.GetItemInfo, CM, item)
+		if not success or not itemID then
+			return -- Sai silenciosamente se não conseguir processar o item
+		end
+		
 		local slotID = InvTypeToSlot[equipLoc]
 		if slotID then
 			slotID = CM:GetDualWieldSlot(slotID)
 			morph.item(unit, slotID, itemID)
 			if not silent and not WardrobeCollectionFrame:IsShown() then
-				CM:PrintChat(format("|cffFFFF00%s|r -> item |cff71D5FF%d|r %s", CM.SlotNames[slotID], itemID, itemLink))
+				CM:PrintChat(format("%s -> %d %s", CM.SlotNames[slotID], itemID, itemLink))
 			end
 		end
 	end
@@ -330,7 +342,9 @@ function CM.MorphTransmogSet()
 	end
 end
 
+-- Individual transmog items with variant detection
 function CM.MorphTransmogItem(frame)
+	--CM:PrintChat("DEBUG: Frame visualID=" .. tostring(frame.visualInfo.visualID) .. " sourceID=" .. tostring(frame.visualInfo.sourceID))
 	local loc = WardrobeCollectionFrame.ItemsCollectionFrame.transmogLocation
 	local visualID = frame.visualInfo.visualID
 
@@ -363,8 +377,31 @@ function CM.MorphTransmogItem(frame)
 			end
 		end
 	elseif loc:IsIllusion() then
-		local slotID = GetInventorySlotInfo(loc.slotID)
-		-- TODO: Handle illusions if needed
+		local slotToName = {
+			[16] = "MainHandSlot",
+			[17] = "SecondaryHandSlot"
+		}
+		
+		local slotName = slotToName[loc.slotID]
+if slotName then
+	local slotID = GetInventorySlotInfo(slotName)
+	local enchantSlot = (slotID == 16) and 1 or 2
+	
+	local morph = CM:CanMorph()  --
+	if morph and morph.enchant then
+	morph.enchant("player", enchantSlot, visualID)
+local enchantName = C_TransmogCollection.GetIllusionStrings(frame.visualInfo.sourceID)
+if enchantName then
+	-- Extrair só o nome antes do [
+	enchantName = enchantName:match("([^%[]+)") or enchantName
+	CM:PrintChat(format("enchant -> %s", enchantName))
+else
+	CM:PrintChat(format("enchant -> applied (visual %d)", visualID))
+	end
+end
+		else
+			CM:PrintChat("Unsupported enchant slot: " .. tostring(loc.slotID))
+		end
 	end
 end
 
