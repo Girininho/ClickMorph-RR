@@ -4,17 +4,6 @@ if not CM.isRetail then return end
 local f = CreateFrame("Frame")
 local active
 
-if IsAddOnLoaded("Blizzard_Collections") then
-    f:InitMountJournal()
-else
-    f:RegisterEvent("ADDON_LOADED")
-    f:SetScript("OnEvent", function(self, event, addon)
-        if addon == "Blizzard_Collections" then
-            self:InitMountJournal()
-            self:UnregisterEvent(event)
-        end
-    end)
-end
 
 function f:InitMountJournal()
 	-- Aguardar carregamento completo com verificação robusta
@@ -31,52 +20,52 @@ function f:InitMountJournal()
 		active = true
 		
 		-- Verificações robustas para WoW 11.x
-		local success = true
+		--local success = true
 		
 		-- Verificar e criar hook do ModelScene
-		if MountJournal.MountDisplay and MountJournal.MountDisplay.ModelScene then
-			pcall(function()
-				MountJournal.MountDisplay.ModelScene:HookScript("OnMouseUp", CM.MorphMountModelScene)
-			end)
-		else
-			print("|cffFFFF00ClickMorph:|r Warning - MountDisplay.ModelScene not found")
-			success = false
-		end
+		--if MountJournal.MountDisplay and MountJournal.MountDisplay.ModelScene then
+			--pcall(function()
+				--MountJournal.MountDisplay.ModelScene:HookScript("OnMouseUp", CM.MorphMountModelScene)
+			--end)
+		--else
+			--print("|cffFFFF00ClickMorph:|r Warning - MountDisplay.ModelScene not found")
+			--success = false
+		--end
 		
 		-- Verificar e criar hooks dos botões do ScrollFrame
-		if MountJournal.ListScrollFrame and MountJournal.ListScrollFrame.buttons then
-			for i, button in pairs(MountJournal.ListScrollFrame.buttons) do
-				if button and button.HookScript then
-					pcall(function()
-						button:HookScript("OnClick", CM.MorphMountScrollFrame)
-					end)
-				end
-			end
-		else
-			print("|cffFFFF00ClickMorph:|r Warning - ListScrollFrame.buttons not found")
-			success = false
-		end
+		--if MountJournal.ListScrollFrame and MountJournal.ListScrollFrame.buttons then
+			--for i, button in pairs(MountJournal.ListScrollFrame.buttons) do
+				--if button and button.HookScript then
+					--pcall(function()
+						--button:HookScript("OnClick", CM.MorphMountScrollFrame)
+					--end)
+				--end
+			--end
+		--else
+			--print("|cffFFFF00ClickMorph:|r Warning - ListScrollFrame.buttons not found")
+			--success = false
+		--end
 		
-		self:CreateUnlockButton()
+		--self:CreateUnlockButton()
 		
-		if success then
-			CM:PrintChat("Mount Journal hooks initialized successfully!")
-		else
-			CM:PrintChat("Mount Journal hooks had some issues - check debug", 1, 1, 0)
-		end
+		--if success then
+			--CM:PrintChat("Mount Journal hooks initialized successfully!")
+		--else
+			--CM:PrintChat("Mount Journal hooks had some issues - check debug", 1, 1, 0)
+		--end
 	end)
 end
 
-function f:CreateUnlockButton()
-	local btn = CreateFrame("Button", nil, MountJournal, "UIPanelButtonTemplate")
-	btn:SetPoint("LEFT", MountJournal.MountCount, "RIGHT", 5, 0) -- topleft corner of the frame
-	btn:SetWidth(100)
-	btn:SetText(UNLOCK)
-	btn:SetScript("OnClick", function(frame)
-		self:UnlockMounts()
-		frame:Hide()
-	end)
-end
+--function f:CreateUnlockButton()
+	--local btn = CreateFrame("Button", nil, MountJournal, "UIPanelButtonTemplate")
+	--btn:SetPoint("LEFT", MountJournal.MountCount, "RIGHT", 5, 0) -- topleft corner of the frame
+	--btn:SetWidth(100)
+	--btn:SetText(UNLOCK)
+	--btn:SetScript("OnClick", function(frame)
+		--self:UnlockMounts()
+		--frame:Hide()
+	--end)
+--end
 
 function f:UnlockMounts()
 	local mountIDs = C_MountJournal.GetMountIDs()
@@ -146,4 +135,17 @@ end
 function f.UpdateMountCount()
 	local ids = C_MountJournal.GetMountIDs()
 	MountJournal.MountCount.Count:SetText(#ids)
+end
+
+-- Registrar evento para carregar quando Blizzard_Collections estiver disponível
+if C_AddOns.IsAddOnLoaded("Blizzard_Collections") then
+    f:InitMountJournal()
+else
+    f:RegisterEvent("ADDON_LOADED")
+    f:SetScript("OnEvent", function(self, event, addon)
+        if addon == "Blizzard_Collections" then
+            self:InitMountJournal()
+            self:UnregisterEvent(event)
+        end
+    end)
 end

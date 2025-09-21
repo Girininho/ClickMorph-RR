@@ -9,23 +9,17 @@
 ## SavedVariables: ClickMorphDB
 ## SavedVariablesPerCharacter: ClickMorph_iMorphV1
 ## OptionalDeps: TellMeWhen, Blizzard_Collections
-
 Libs\LibStub\LibStub.lua
 Libs\StdUiV2\StdUi.xml
-
 ClickMorph.lua
 Database.lua
-
+Commands.lua
 iMorph\iMorphV1.lua
 iMorph\iMorphLua.lua
-
-Gui.lua
 Npc.lua
 Inspect.lua
 Compat.lua
-
 Live\Mount.lua
 Live\Wardrobe.lua
 Live\Compatibility11x.lua
-
 Classic\Mount.lua

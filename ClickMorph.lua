@@ -58,8 +58,10 @@ local DualWieldSlot = {
 	[INVSLOT_OFFHAND] = INVSLOT_MAINHAND,
 }
 
+-- Função para prints condicionais (respeita silent mode)
 function CM:PrintChat(msg, r, g, b)
-	if not ClickMorphDB or not ClickMorphDB.silent then
+	local silentMode = ClickMorphCommands and ClickMorphCommands.config and ClickMorphCommands.config.silentMode
+	if not silentMode and (not ClickMorphDB or not ClickMorphDB.silent) then
 		DEFAULT_CHAT_FRAME:AddMessage(format("|cff7fff00ClickMorph|r: |r%s", msg), r, g, b)
 	end
 end
@@ -128,13 +130,13 @@ CM.morphers = {
 		race = function(_, raceID, genderID)
 			if SetRace then SetRace(raceID, genderID) end
 		end,
-enchant = function(_, slotID, visualID)
-	if SetEnchant then 
-		local command = string.format("enchant %d %d", slotID, visualID)
-		ChatFrame1EditBox:SetText("." .. command)
-		ChatEdit_SendText(ChatFrame1EditBox, 0)
-	end
-end,
+		enchant = function(_, slotID, visualID)
+			if SetEnchant then 
+				local command = string.format("enchant %d %d", slotID, visualID)
+				ChatFrame1EditBox:SetText("." .. command)
+				ChatEdit_SendText(ChatFrame1EditBox, 0)
+			end
+		end,
 		mount = function(_, displayID)
 			if CM:CanMorphMount() and SetMount then
 				SetMount(displayID)
@@ -142,16 +144,16 @@ end,
 			end
 		end,
 		item = function(_, slotID, itemID, itemModID)
-	if SetItem then
-		if itemModID and itemModID > 0 then
-			-- Usar itemModID real do WoW (156, 158, 160, etc.)
-			SetItem(slotID, itemID, itemModID)
-		else
-			-- Comando simples sem modifier
-			SetItem(slotID, itemID)
-		end
-	end
-end,
+			if SetItem then
+				if itemModID and itemModID > 0 then
+					-- Usar itemModID real do WoW (156, 158, 160, etc.)
+					SetItem(slotID, itemID, itemModID)
+				else
+					-- Comando simples sem modifier
+					SetItem(slotID, itemID)
+				end
+			end
+		end,
 		scale = function(_, value)
 			if SetScale then
 				SetScale(value)
@@ -344,7 +346,6 @@ end
 
 -- Individual transmog items with variant detection
 function CM.MorphTransmogItem(frame)
-	--CM:PrintChat("DEBUG: Frame visualID=" .. tostring(frame.visualInfo.visualID) .. " sourceID=" .. tostring(frame.visualInfo.sourceID))
 	local loc = WardrobeCollectionFrame.ItemsCollectionFrame.transmogLocation
 	local visualID = frame.visualInfo.visualID
 
@@ -383,53 +384,84 @@ function CM.MorphTransmogItem(frame)
 		}
 		
 		local slotName = slotToName[loc.slotID]
-if slotName then
-	local slotID = GetInventorySlotInfo(slotName)
-	local enchantSlot = (slotID == 16) and 1 or 2
-	
-	local morph = CM:CanMorph()  --
-	if morph and morph.enchant then
-	morph.enchant("player", enchantSlot, visualID)
-local enchantName = C_TransmogCollection.GetIllusionStrings(frame.visualInfo.sourceID)
-if enchantName then
-	-- Extrair só o nome antes do [
-	enchantName = enchantName:match("([^%[]+)") or enchantName
-	CM:PrintChat(format("enchant -> %s", enchantName))
-else
-	CM:PrintChat(format("enchant -> applied (visual %d)", visualID))
-	end
-end
+		if slotName then
+			local slotID = GetInventorySlotInfo(slotName)
+			local enchantSlot = (slotID == 16) and 1 or 2
+			
+			local morph = CM:CanMorph()
+			if morph and morph.enchant then
+				morph.enchant("player", enchantSlot, visualID)
+				local enchantName = C_TransmogCollection.GetIllusionStrings(frame.visualInfo.sourceID)
+				if enchantName then
+					-- Extrair só o nome antes do [
+					enchantName = enchantName:match("([^%[]+)") or enchantName
+					CM:PrintChat(format("enchant -> %s", enchantName))
+				else
+					CM:PrintChat(format("enchant -> applied (visual %d)", visualID))
+				end
+			end
 		else
 			CM:PrintChat("Unsupported enchant slot: " .. tostring(loc.slotID))
 		end
 	end
 end
 
--- Hooks initialization
+-- Hooks initialization - com prevenção de hooks duplos
+local hooksInitialized = false
 local function InitializeHooks()
-	-- Mount Journal hooks (Alt+Shift)
+	if hooksInitialized then
+		return -- Previne hooks duplos
+	end
+	hooksInitialized = true
+	-- Mount Journal hooks (Alt+Shift) - com verificação robusta para WoW 11.x
 	if MountJournal then
+		local mountHooksSuccess = true
+		
+		-- Hook do ModelScene
 		if MountJournal.MountDisplay and MountJournal.MountDisplay.ModelScene then
 			MountJournal.MountDisplay.ModelScene:HookScript("OnMouseUp", function(self, button)
 				if button == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
 					CM.MorphMountModelScene()
 				end
 			end)
+		else
+			mountHooksSuccess = false
 		end
 		
-		if MountJournal.ListScrollFrame and MountJournal.ListScrollFrame.buttons then
-			for _, button in pairs(MountJournal.ListScrollFrame.buttons) do
-				if button then
-					button:HookScript("OnClick", function(self, btn)
-						if btn == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
-							CM.MorphMountScrollFrame(self)
-						end
-					end)
+		-- Hook dos botões de lista - com verificação mais robusta
+		local listFrame = MountJournal.ListScrollFrame or MountJournal.scrollFrame
+		if listFrame then
+			-- Tentar diferentes estruturas para WoW 11.x
+			local buttons = listFrame.buttons or listFrame.Buttons or listFrame.ScrollTarget and listFrame.ScrollTarget.buttons
+			
+			if buttons then
+				for _, button in pairs(buttons) do
+					if button and button.HookScript then
+						button:HookScript("OnClick", function(self, btn)
+							if btn == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
+								CM.MorphMountScrollFrame(self)
+							end
+						end)
+					end
 				end
+			else
+				-- Fallback para nova estrutura do WoW 11.x
+				mountHooksSuccess = false
+			end
+		else
+			mountHooksSuccess = false
+		end
+		
+		if mountHooksSuccess then
+			CM:PrintChat("Mount Journal hooks initialized (Alt+Shift)")
+		else
+			-- Warning apenas se não conseguir nenhum hook
+			if not (MountJournal.MountDisplay and MountJournal.MountDisplay.ModelScene) then
+				CM:PrintChat("Mount Journal: Using basic functionality (some UI changes in WoW 11.x)", 1, 1, 0)
+			else
+				CM:PrintChat("Mount Journal hooks initialized with basic functionality")
 			end
 		end
-		
-		CM:PrintChat("Mount Journal hooks initialized (Alt+Shift)")
 	end
 	
 	-- Wardrobe Set hooks (Alt+Shift)
@@ -447,7 +479,7 @@ local function InitializeHooks()
 		CM:PrintChat("Wardrobe Sets hooks initialized (Alt+Shift)")
 	end
 	
-	-- Wardrobe individual items hooks (Alt+Shift) - MOVIDO PARA DENTRO
+	-- Wardrobe individual items hooks (Alt+Shift)
 	if WardrobeCollectionFrame and WardrobeCollectionFrame.ItemsCollectionFrame then
 		local itemsFrame = WardrobeCollectionFrame.ItemsCollectionFrame
 		
@@ -484,7 +516,7 @@ function CM:Debug()
 	local uis = {
 		["MountJournal"] = MountJournal,
 		["WardrobeCollectionFrame"] = WardrobeCollectionFrame,
-		["Collections"] = IsAddOnLoaded("Blizzard_Collections")
+		["Collections"] = C_AddOns.IsAddOnLoaded("Blizzard_Collections")
 	}
 	
 	for name, obj in pairs(uis) do
@@ -498,6 +530,10 @@ function CM:Debug()
 	else
 		self:PrintChat("[FAIL] No morpher found - load iMorph first")
 	end
+	
+	-- Debug silent mode
+	local silentMode = ClickMorphCommands and ClickMorphCommands.config and ClickMorphCommands.config.silentMode
+	self:PrintChat("Silent Mode: " .. (silentMode and "ON" or "OFF"))
 end
 
 -- Commands
@@ -513,14 +549,16 @@ mainFrame:SetScript("OnEvent", function(self, event, addonName)
 	if addonName == "ClickMorph" then
 		CM:PrintChat("Loaded! All functions use Alt+Shift+Click. Use /cmdebug to check status.")
 	elseif addonName == "Blizzard_Collections" then
-		C_Timer.After(0.5, InitializeHooks)
+		if not hooksInitialized then
+			C_Timer.After(0.5, InitializeHooks)
+		end
 		self:UnregisterEvent(event)
 	end
 end)
 
--- Fallback initialization
+-- Fallback initialization - apenas se ainda não inicializou
 C_Timer.After(2, function()
-	if IsAddOnLoaded("Blizzard_Collections") then
+	if C_AddOns.IsAddOnLoaded("Blizzard_Collections") and not hooksInitialized then
 		InitializeHooks()
 	end
 end)

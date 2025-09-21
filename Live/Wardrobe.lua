@@ -56,9 +56,9 @@ local weaponCategories = {
 }
 
 function f:OnEvent(event, arg1)
-	if event == "ADDON_LOADED" and arg1 == "Blizzard_Collections" then
-		self:InitWardrobe()
-		self:UnregisterEvent(event)
+    if event == "ADDON_LOADED" and arg1 == "Blizzard_Collections" then
+    self:InitWardrobe()  -- Volta como método
+    self:UnregisterEvent(event)
 	elseif event == "TRANSMOG_COLLECTION_ITEM_UPDATE" then
 		if not unlocked then
 			startupTimer = .6
@@ -84,11 +84,6 @@ function f:UnlockTimer(elapsed)
 	end
 end
 
-if IsAddOnLoaded("Blizzard_Collections") then
-    f:InitWardrobe()
-else
-    f:RegisterEvent("ADDON_LOADED")
-end
 
 f:SetScript("OnEvent", f.OnEvent)
 
@@ -110,30 +105,30 @@ function f:InitWardrobe()
 		IsWardRobeSortLoaded = IsAddOnLoaded("WardRobeSort")
 
 		-- item sets
-		WardrobeCollectionFrame.SetsCollectionFrame.Model:HookScript("OnMouseUp", CM.MorphTransmogSet)
+		--WardrobeCollectionFrame.SetsCollectionFrame.Model:HookScript("OnMouseUp", CM.MorphTransmogSet)
 		-- items
-		for _, model in pairs(ItemsCollection.Models) do
-			model:HookScript("OnMouseUp", CM.MorphTransmogItem)
-		end
+		--for _, model in pairs(ItemsCollection.Models) do
+			--model:HookScript("OnMouseUp", CM.MorphTransmogItem)
+		--end
 
 		ScanningModel = CreateFrame("DressUpModel")
 		ScanningModel:SetUnit("player")
-		self:CreateUnlockButton()
+		--self:CreateUnlockButton()
 	end)
 end
 
-function f:CreateUnlockButton()
-	local btn = CreateFrame("Button", nil, ItemsCollection, "UIPanelButtonTemplate")
-	btn:SetPoint("TOPLEFT", WardrobeCollectionFrame.Tabs[1], "BOTTOMLEFT", -40, -55) -- topleft corner of the frame
-	btn:SetWidth(100)
-	btn:SetText(UNLOCK)
+--function f:CreateUnlockButton()
+	--local btn = CreateFrame("Button", nil, ItemsCollection, "UIPanelButtonTemplate")
+	--btn:SetPoint("TOPLEFT", WardrobeCollectionFrame.Tabs[1], "BOTTOMLEFT", -40, -55) -- topleft corner of the frame
+	--btn:SetWidth(100)
+	--btn:SetText(UNLOCK)
 
-	btn:SetScript("OnClick", function(frame)
-		startupUnlockTime = time()
-		self:UnlockWardrobe()
-		frame:Hide()
-	end)
-end
+	--btn:SetScript("OnClick", function(frame)
+		--startupUnlockTime = time()
+		--self:UnlockWardrobe()
+		--frame:Hide()
+	--end)
+--end
 
 function f:UnlockWardrobe()
 	if not unlocked then
@@ -503,4 +498,11 @@ function f.UpdateMouseFocus()
 			focus:GetScript("OnEnter")(focus)
 		end
 	end
+end
+
+-- Registrar evento para carregar quando Blizzard_Collections estiver disponível
+if C_AddOns.IsAddOnLoaded("Blizzard_Collections") then
+    f:OnEvent("ADDON_LOADED", "Blizzard_Collections")
+else
+    f:RegisterEvent("ADDON_LOADED")
 end
