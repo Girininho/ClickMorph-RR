@@ -3,24 +3,47 @@
 ## Interface-BCC: 20504
 ## Interface-Wrath: 30403
 ## Version: @project-version@
-## Title: ClickMorph
-## Notes: Lets you alt-click to morph
+## Title: ClickMorph - iMorph Edition
+## Notes: Lets you alt-click to morph with enhanced iMorph interface and tools
 ## Author: Ketho, Icesythe7, Girininho
-## SavedVariables: ClickMorphDB
+## SavedVariables: ClickMorphDB, ClickMorphMagiButtonSV, ClickMorphSaveHubSV
 ## SavedVariablesPerCharacter: ClickMorph_iMorphV1
 ## OptionalDeps: TellMeWhen, Blizzard_Collections
+
+# Core Libraries
 Libs\LibStub\LibStub.lua
 Libs\StdUiV2\StdUi.xml
+
+# Original ClickMorph Core
 ClickMorph.lua
 Database.lua
 Commands.lua
+
+# iMorph Integration
 iMorph\iMorphV1.lua
 iMorph\iMorphLua.lua
+
+# Original ClickMorph Features
 Npc.lua
 Inspect.lua
 Compat.lua
+
+# Platform-specific Features
 Live\Mount.lua
 Live\Wardrobe.lua
 Live\Compatibility11x.lua
 Classic\Mount.lua
+
+# Original ShowAll
 ShowAll.lua
+
+# iMorph Edition - Enhanced Systems (load after originals)
+MagiButton.lua
+ShowAllWardrobe.lua
+Titles.lua
+SaveHub.lua
+IMisc.lua
+DruidForms.lua
+PetZone.lua
+MountCustomizer.lua
+CusTab.lua
