@@ -11,7 +11,7 @@ local addons = {
 function OnEvent(self, event, isInitialLogin, isReloadingUi)
 	if isInitialLogin or isReloadingUi then
 		for _, addon in pairs(addons) do
-			if IsAddOnLoaded(addon) then
+			if C_AddOns.IsAddOnLoaded(addon) then
 				CM[addon](CM)
 			end
 		end

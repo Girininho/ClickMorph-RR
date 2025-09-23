@@ -3,7 +3,7 @@
 ## Interface-BCC: 20504
 ## Interface-Wrath: 30403
 ## Version: @project-version@
-## Title: ClickMorph - iMorph Edition
+## Title: ClickMorphRR
 ## Notes: Lets you alt-click to morph with enhanced iMorph interface and tools
 ## Author: Ketho, Icesythe7, Girininho
 ## SavedVariables: ClickMorphDB, ClickMorphMagiButtonSV, ClickMorphSaveHubSV
@@ -37,13 +37,18 @@ Classic\Mount.lua
 # Original ShowAll
 ShowAll.lua
 
-# iMorph Edition - Enhanced Systems (load after originals)
+# iMorph - Enhanced Systems (load after originals)
 MagiButton.lua
 ShowAllWardrobe.lua
 Titles.lua
 SaveHub.lua
-IMisc.lua
 DruidForms.lua
 PetZone.lua
 MountCustomizer.lua
-CusTab.lua
+PauldronSystem.lua
+MountShop.lua
+MorphCatalogue.lua
+SaveHubWardrobe.lua
+CustomWardrobe.lua
+SmartDiscovery.lua
+SaveHubPreview.lua

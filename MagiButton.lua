@@ -1,29 +1,34 @@
 -- MagiButton.lua
--- Sistema para salvar e restaurar morphs automaticamente
--- Inclui re-aplicação automática ao trocar mapas/recarregar
--- ATUALIZADO com melhor integração ao SaveHub
+-- Sistema melhorado do MagiButton com toggle temporário de morph
 
 ClickMorphMagiButton = {}
 
--- Dados salvos (persistentes entre sessões)
-ClickMorphMagiButtonSV = ClickMorphMagiButtonSV or {
-    lastMorph = {},
-    autoRestore = true,
-    interceptCommands = true,
-    debugMode = false
-}
-
 -- Sistema do MagiButton
-ClickMorphMagiButton.system = {
-    isActive = false,
-    currentMorph = {},
-    eventFrame = nil,
-    originalSendChatMessage = nil
+ClickMorphMagiButton.buttonSystem = {
+    button = nil,
+    isVisible = true,
+    position = {x = 0, y = 0},
+    
+    -- Estado temporário para o toggle
+    temporaryState = {
+        isTemporaryReset = false, -- se está em estado "reset temporário"
+        savedMorph = nil, -- morph que estava antes do reset temporário
+        autoRestoreTimer = nil, -- timer para auto-restore
+        autoRestoreDelay = 300 -- 5 minutos em segundos
+    },
+    
+    -- Configurações
+    settings = {
+        autoRestoreTimeout = true, -- auto-restore após timeout
+        showTooltips = true,
+        buttonSize = 32,
+        debugMode = false
+    }
 }
 
--- Debug print específico do MagiButton
+-- Debug print
 local function MagiDebugPrint(...)
-    if ClickMorphMagiButtonSV.debugMode then
+    if ClickMorphMagiButton.buttonSystem.settings.debugMode then
         local args = {...}
         for i = 1, #args do
             if args[i] == nil then
@@ -33,403 +38,568 @@ local function MagiDebugPrint(...)
             end
         end
         local message = table.concat(args, " ")
-        print("|cffff00ccMagi:|r", message)
+        print("|cff9933ffMagiButton:|r", message)
     end
 end
 
--- Estrutura padrão de um morph
-function ClickMorphMagiButton.CreateEmptyMorph()
-    return {
-        race = nil,
-        gender = nil,
-        items = {
-            [1] = nil,  -- Head
-            [2] = nil,  -- Neck  
-            [3] = nil,  -- Shoulder
-            [4] = nil,  -- Body/Shirt
-            [5] = nil,  -- Chest
-            [6] = nil,  -- Belt
-            [7] = nil,  -- Legs
-            [8] = nil,  -- Feet
-            [9] = nil,  -- Wrist
-            [10] = nil, -- Hands
-            [11] = nil, -- Finger1
-            [12] = nil, -- Finger2
-            [13] = nil, -- Trinket1
-            [14] = nil, -- Trinket2
-            [15] = nil, -- Back
-            [16] = nil, -- Main hand
-            [17] = nil, -- Off hand
-            [18] = nil, -- Ranged
-            [19] = nil, -- Tabard
-        },
-        enchants = {},
-        scale = nil, -- Para .morph scale
-        timestamp = time(),
-        playerName = UnitName("player"),
-        realmName = GetRealmName()
-    }
+-- Obter morph atual do SaveHub
+function ClickMorphMagiButton.GetCurrentSavedMorph()
+    if ClickMorphSaveHub and ClickMorphSaveHub.saveSystem then
+        local session = ClickMorphSaveHub.saveSystem.session
+        return session.lastAppliedMorph or session.currentMorph
+    end
+    return nil
 end
 
--- Interceptar comandos do iMorph para salvar automaticamente
-function ClickMorphMagiButton.HookSendChatMessage()
-    local system = ClickMorphMagiButton.system
+-- Salvar morph atual temporariamente
+function ClickMorphMagiButton.SaveCurrentMorphTemporary()
+    local currentMorph = ClickMorphMagiButton.GetCurrentSavedMorph()
     
-    if system.originalSendChatMessage then
-        return -- Já hooked
+    if currentMorph then
+        ClickMorphMagiButton.buttonSystem.temporaryState.savedMorph = currentMorph
+        MagiDebugPrint("Saved morph temporarily:", currentMorph.name or "Unnamed")
+        return true
     end
     
-    system.originalSendChatMessage = SendChatMessage
-    
-    SendChatMessage = function(msg, chatType, language, channel)
-        -- Interceptar comandos do imorph
-        if msg and type(msg) == "string" and msg:sub(1, 1) == "." then
-            ClickMorphMagiButton.ProcessIMorphCommand(msg)
-        end
-        
-        -- Chamar função original
-        return system.originalSendChatMessage(msg, chatType, language, channel)
-    end
-    
-    MagiDebugPrint("SendChatMessage hooked for command interception")
+    MagiDebugPrint("No current morph to save")
+    return false
 end
 
--- Processar comando do iMorph e salvar dados
-function ClickMorphMagiButton.ProcessIMorphCommand(command)
-    if not ClickMorphMagiButtonSV.interceptCommands then
-        return
-    end
+-- Restaurar morph salvo temporariamente
+function ClickMorphMagiButton.RestoreTemporarySavedMorph()
+    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
+    local savedMorph = tempState.savedMorph
     
-    MagiDebugPrint("Processing iMorph command:", command)
-    
-    local cmd = command:lower()
-    
-    -- .morph race [race] [gender]
-    if cmd:match("^%.morph%s+race%s+") then
-        local race, gender = cmd:match("^%.morph%s+race%s+(%d+)%s*(%d*)")
-        if race then
-            ClickMorphMagiButton.system.currentMorph.race = tonumber(race)
-            ClickMorphMagiButton.system.currentMorph.gender = tonumber(gender) or 0
-            MagiDebugPrint("Saved race:", race, "gender:", gender or "0")
-        end
-    
-    -- .morph item [slot] [entry] [split]
-    elseif cmd:match("^%.morph%s+item%s+") then
-        local slot, entry, split = cmd:match("^%.morph%s+item%s+(%d+)%s+(%d+)%s*(%d*)")
-        if slot and entry then
-            local slotNum = tonumber(slot)
-            local entryNum = tonumber(entry)
-            local splitNum = tonumber(split) or 0
-            
-            if not ClickMorphMagiButton.system.currentMorph.items then
-                ClickMorphMagiButton.system.currentMorph.items = {}
-            end
-            
-            ClickMorphMagiButton.system.currentMorph.items[slotNum] = {
-                entry = entryNum,
-                split = splitNum
-            }
-            
-            MagiDebugPrint("Saved item - slot:", slotNum, "entry:", entryNum, "split:", splitNum)
-        end
-    
-    -- .morph scale [value]
-    elseif cmd:match("^%.morph%s+scale%s+") then
-        local scale = cmd:match("^%.morph%s+scale%s+([%d%.]+)")
-        if scale then
-            ClickMorphMagiButton.system.currentMorph.scale = tonumber(scale)
-            MagiDebugPrint("Saved scale:", scale)
-        end
-    
-    -- .morph reset [slot] 
-    elseif cmd:match("^%.morph%s+reset%s+") then
-        local slot = cmd:match("^%.morph%s+reset%s+(%d+)")
-        if slot then
-            local slotNum = tonumber(slot)
-            if ClickMorphMagiButton.system.currentMorph.items then
-                ClickMorphMagiButton.system.currentMorph.items[slotNum] = nil
-                MagiDebugPrint("Reset slot:", slotNum)
-            end
-        end
-    
-    -- .morph reset (tudo)
-    elseif cmd:match("^%.morph%s+reset%s*$") then
-        ClickMorphMagiButton.system.currentMorph = ClickMorphMagiButton.CreateEmptyMorph()
-        MagiDebugPrint("Full morph reset")
-    end
-    
-    -- Auto-salvar sempre que houver mudanças
-    ClickMorphMagiButton.SaveCurrentMorph()
-    
-    -- Notificar SaveHub se disponível
-    if ClickMorphSaveHub and ClickMorphSaveHub.NotifyMorphChange then
-        ClickMorphSaveHub.NotifyMorphChange(ClickMorphMagiButton.system.currentMorph)
-    end
-end
-
--- Salvar morph atual como último morph
-function ClickMorphMagiButton.SaveCurrentMorph()
-    local currentMorph = ClickMorphMagiButton.system.currentMorph
-    currentMorph.timestamp = time()
-    currentMorph.playerName = UnitName("player")
-    currentMorph.realmName = GetRealmName()
-    
-    -- Salvar nos dados persistentes
-    ClickMorphMagiButtonSV.lastMorph = CopyTable(currentMorph)
-    
-    MagiDebugPrint("Current morph saved to persistent storage")
-end
-
--- Restaurar último morph salvo
-function ClickMorphMagiButton.RestoreLastMorph()
-    local lastMorph = ClickMorphMagiButtonSV.lastMorph
-    
-    if not lastMorph or not next(lastMorph) then
-        print("|cffff0000MagiButton:|r No saved morph to restore")
+    if not savedMorph then
+        MagiDebugPrint("No temporary morph to restore")
         return false
     end
     
-    print("|cff00ff00MagiButton:|r Restoring saved morph...")
-    MagiDebugPrint("Starting morph restoration")
+    MagiDebugPrint("Restoring temporary morph:", savedMorph.name or "Unnamed")
     
-    local commandsApplied = 0
-    
-    -- Restaurar race/gender
-    if lastMorph.race then
-        local raceCmd = string.format(".morph race %d %d", lastMorph.race, lastMorph.gender or 0)
-        SendChatMessage(raceCmd, "SAY")
-        commandsApplied = commandsApplied + 1
-        MagiDebugPrint("Restored race command:", raceCmd)
-    end
-    
-    -- Restaurar items
-    if lastMorph.items then
-        local delay = 0
-        for slot, itemData in pairs(lastMorph.items) do
-            if itemData and itemData.entry then
-                C_Timer.After(delay * 0.15, function()
-                    local itemCmd = string.format(".morph item %d %d %d", slot, itemData.entry, itemData.split or 0)
-                    SendChatMessage(itemCmd, "SAY")
-                    MagiDebugPrint("Restored item command:", itemCmd)
-                end)
-                delay = delay + 1
-                commandsApplied = commandsApplied + 1
-            end
+    -- Usar SaveHub API para aplicar o morph salvo
+    if ClickMorphSaveHub and ClickMorphSaveHub.ApplyMorphFromSave then
+        ClickMorphSaveHub.ApplyMorphFromSave(savedMorph)
+    else
+        -- Fallback: aplicar comando diretamente
+        local morph = savedMorph.morph
+        if morph and morph.displayID then
+            local command = morph.command or (".morph " .. morph.displayID)
+            SendChatMessage(command, "GUILD")
         end
     end
     
-    -- Restaurar scale
-    if lastMorph.scale then
-        C_Timer.After(commandsApplied * 0.15, function()
-            local scaleCmd = string.format(".morph scale %s", tostring(lastMorph.scale))
-            SendChatMessage(scaleCmd, "SAY")
-            MagiDebugPrint("Restored scale command:", scaleCmd)
-        end)
-        commandsApplied = commandsApplied + 1
-    end
-    
-    -- Atualizar morph atual
-    ClickMorphMagiButton.system.currentMorph = CopyTable(lastMorph)
-    
-    print("|cff00ff00MagiButton:|r Restored morph with", commandsApplied, "commands")
     return true
 end
 
--- Sistema de eventos para auto-restore
-function ClickMorphMagiButton.CreateEventFrame()
-    local system = ClickMorphMagiButton.system
+-- Aplicar reset temporário
+function ClickMorphMagiButton.ApplyTemporaryReset()
+    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
     
-    if system.eventFrame then
-        return system.eventFrame
+    MagiDebugPrint("Applying temporary reset")
+    
+    -- Salvar morph atual
+    if ClickMorphMagiButton.SaveCurrentMorphTemporary() then
+        -- Aplicar reset
+        SendChatMessage(".reset", "GUILD")
+        
+        -- Marcar estado temporário
+        tempState.isTemporaryReset = true
+        
+        -- Iniciar timer de auto-restore se configurado
+        if ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout then
+            ClickMorphMagiButton.StartAutoRestoreTimer()
+        end
+        
+        -- Atualizar aparência do botão
+        ClickMorphMagiButton.UpdateButtonAppearance()
+        
+        return true
     end
     
-    local frame = CreateFrame("Frame", "ClickMorphMagiButtonEventFrame")
+    return false
+end
+
+-- Cancelar reset temporário (restaurar morph)
+function ClickMorphMagiButton.CancelTemporaryReset()
+    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
     
-    -- Eventos que podem causar perda de morph
-    frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-    frame:RegisterEvent("PLAYER_LOGIN")
+    MagiDebugPrint("Canceling temporary reset")
     
-    frame:SetScript("OnEvent", function(self, event, ...)
-        MagiDebugPrint("Event triggered:", event)
+    -- Restaurar morph
+    if ClickMorphMagiButton.RestoreTemporarySavedMorph() then
+        -- Limpar estado temporário
+        tempState.isTemporaryReset = false
+        tempState.savedMorph = nil
         
-        if event == "PLAYER_LOGIN" then
-            MagiDebugPrint("Player login - initializing MagiButton")
-            C_Timer.After(5, function() -- Delay para garantir que tudo carregou
-                if ClickMorphMagiButtonSV.autoRestore then
-                    ClickMorphMagiButton.RestoreLastMorph()
-                end
-            end)
+        -- Cancelar timer
+        ClickMorphMagiButton.CancelAutoRestoreTimer()
         
-        elseif event == "PLAYER_ENTERING_WORLD" then
-            local isLogin, isReload = ...
-            if isLogin or isReload then
-                MagiDebugPrint("Player entering world - login/reload detected")
-                C_Timer.After(3, function()
-                    if ClickMorphMagiButtonSV.autoRestore then
-                        ClickMorphMagiButton.RestoreLastMorph()
-                    end
-                end)
+        -- Atualizar aparência do botão
+        ClickMorphMagiButton.UpdateButtonAppearance()
+        
+        return true
+    end
+    
+    return false
+end
+
+-- Timer de auto-restore
+function ClickMorphMagiButton.StartAutoRestoreTimer()
+    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
+    local delay = ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout
+    
+    -- Cancelar timer existente
+    ClickMorphMagiButton.CancelAutoRestoreTimer()
+    
+    MagiDebugPrint("Starting auto-restore timer:", delay, "seconds")
+    
+    tempState.autoRestoreTimer = C_Timer.NewTimer(delay, function()
+        MagiDebugPrint("Auto-restore timer expired, restoring morph")
+        ClickMorphMagiButton.CancelTemporaryReset()
+        print("|cff9933ffMagiButton:|r Auto-restored morph after timeout")
+    end)
+end
+
+function ClickMorphMagiButton.CancelAutoRestoreTimer()
+    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
+    
+    if tempState.autoRestoreTimer then
+        tempState.autoRestoreTimer:Cancel()
+        tempState.autoRestoreTimer = nil
+        MagiDebugPrint("Auto-restore timer canceled")
+    end
+end
+
+-- Lógica principal do clique do botão
+function ClickMorphMagiButton.OnButtonClick(button, mouseButton)
+    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
+    
+    MagiDebugPrint("Button clicked, current state:", tempState.isTemporaryReset and "RESET" or "MORPH")
+    
+    if mouseButton == "LeftButton" then
+        if tempState.isTemporaryReset then
+            -- Está em reset temporário -> restaurar morph
+            ClickMorphMagiButton.CancelTemporaryReset()
+            print("|cff9933ffMagiButton:|r Morph restored!")
+        else
+            -- Não está em reset -> aplicar reset temporário
+            if ClickMorphMagiButton.ApplyTemporaryReset() then
+                print("|cff9933ffMagiButton:|r Showing real character. Click again to restore morph!")
+            else
+                print("|cff9933ffMagiButton:|r No morph to temporarily hide.")
             end
-        
-        elseif event == "ZONE_CHANGED_NEW_AREA" then
-            MagiDebugPrint("Zone changed - checking for auto-restore")
-            C_Timer.After(2, function()
-                if ClickMorphMagiButtonSV.autoRestore then
-                    ClickMorphMagiButton.RestoreLastMorph()
-                end
-            end)
         end
+        
+    elseif mouseButton == "RightButton" then
+        -- Right-click: menu de opções ou reset permanente
+        ClickMorphMagiButton.ShowContextMenu()
+        
+    elseif mouseButton == "MiddleButton" then
+        -- Middle-click: reset permanente (limpa tudo)
+        ClickMorphMagiButton.PermanentReset()
+    end
+end
+
+-- Reset permanente (limpa morph e estado temporário)
+function ClickMorphMagiButton.PermanentReset()
+    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
+    
+    MagiDebugPrint("Permanent reset requested")
+    
+    -- Aplicar reset
+    SendChatMessage(".reset", "GUILD")
+    
+    -- Limpar estado temporário
+    tempState.isTemporaryReset = false
+    tempState.savedMorph = nil
+    ClickMorphMagiButton.CancelAutoRestoreTimer()
+    
+    -- Limpar SaveHub session se disponível
+    if ClickMorphSaveHub and ClickMorphSaveHub.saveSystem then
+        ClickMorphSaveHub.saveSystem.session.currentMorph = nil
+    end
+    
+    -- Atualizar aparência do botão
+    ClickMorphMagiButton.UpdateButtonAppearance()
+    
+    print("|cff9933ffMagiButton:|r Permanent reset applied!")
+end
+
+-- Menu de contexto (right-click)
+function ClickMorphMagiButton.ShowContextMenu()
+    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
+    
+    local menu = {
+        {
+            text = "MagiButton Options",
+            isTitle = true,
+        },
+        {
+            text = "Toggle Visibility",
+            func = function()
+                ClickMorphMagiButton.ToggleVisibility()
+            end,
+        },
+        {
+            text = "Permanent Reset",
+            func = function()
+                ClickMorphMagiButton.PermanentReset()
+            end,
+        }
+    }
+    
+    if tempState.isTemporaryReset then
+        table.insert(menu, {
+            text = "Cancel Temporary Reset",
+            func = function()
+                ClickMorphMagiButton.CancelTemporaryReset()
+            end,
+        })
+    end
+    
+    table.insert(menu, {
+        text = "Settings",
+        hasArrow = true,
+        menuList = {
+            {
+                text = "Auto-Restore Timeout",
+                checked = ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout,
+                func = function()
+                    ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout = not ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout
+                    print("|cff9933ffMagiButton:|r Auto-restore timeout", ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout and "ON" or "OFF")
+                end,
+            },
+            {
+                text = "Show Tooltips",
+                checked = ClickMorphMagiButton.buttonSystem.settings.showTooltips,
+                func = function()
+                    ClickMorphMagiButton.buttonSystem.settings.showTooltips = not ClickMorphMagiButton.buttonSystem.settings.showTooltips
+                    print("|cff9933ffMagiButton:|r Tooltips", ClickMorphMagiButton.buttonSystem.settings.showTooltips and "ON" or "OFF")
+                end,
+            },
+            {
+                text = "Debug Mode",
+                checked = ClickMorphMagiButton.buttonSystem.settings.debugMode,
+                func = function()
+                    ClickMorphMagiButton.buttonSystem.settings.debugMode = not ClickMorphMagiButton.buttonSystem.settings.debugMode
+                    print("|cff9933ffMagiButton:|r Debug mode", ClickMorphMagiButton.buttonSystem.settings.debugMode and "ON" or "OFF")
+                end,
+            }
+        }
+    })
+    
+    local contextMenu = CreateFrame("Frame", "MagiButtonContextMenu", UIParent, "UIDropDownMenuTemplate")
+    EasyMenu(menu, contextMenu, "cursor", 0, 0, "MENU")
+end
+
+-- Atualizar aparência visual do botão
+function ClickMorphMagiButton.UpdateButtonAppearance()
+    local button = ClickMorphMagiButton.buttonSystem.button
+    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
+    
+    if not button then return end
+    
+    if tempState.isTemporaryReset then
+        -- Estado "reset temporário" - botão com cor diferente
+        button:SetNormalTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
+        button:SetPushedTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Down")
+        button:SetAlpha(0.8)
+        
+        -- Efeito visual de "pulsing"
+        if not button.pulseAnimation then
+            button.pulseAnimation = button:CreateAnimationGroup()
+            local pulse = button.pulseAnimation:CreateAnimation("Alpha")
+            pulse:SetFromAlpha(0.8)
+            pulse:SetToAlpha(1.0)
+            pulse:SetDuration(1)
+            pulse:SetSmoothing("IN_OUT")
+            button.pulseAnimation:SetLooping("BOUNCE")
+        end
+        button.pulseAnimation:Play()
+        
+    else
+        -- Estado normal - botão com aparência padrão
+        button:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+        button:SetPushedTexture("Interface\\Buttons\\UI-Panel-Button-Down")
+        button:SetAlpha(1.0)
+        
+        -- Parar animação
+        if button.pulseAnimation then
+            button.pulseAnimation:Stop()
+        end
+    end
+end
+
+-- Tooltip do botão
+function ClickMorphMagiButton.OnButtonEnter(button)
+    local settings = ClickMorphMagiButton.buttonSystem.settings
+    
+    if not settings.showTooltips then return end
+    
+    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
+    
+    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+    
+    if tempState.isTemporaryReset then
+        GameTooltip:SetText("MagiButton", 1, 1, 1)
+        GameTooltip:AddLine("Currently showing real character", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(" ", 1, 1, 1)
+        GameTooltip:AddLine("Left-Click: Restore morph", 0, 1, 0)
+        GameTooltip:AddLine("Right-Click: Options menu", 1, 1, 0)
+        GameTooltip:AddLine("Middle-Click: Permanent reset", 1, 0.5, 0)
+        
+        if tempState.savedMorph then
+            GameTooltip:AddLine(" ", 1, 1, 1)
+            GameTooltip:AddLine("Saved: " .. (tempState.savedMorph.name or "Unknown Morph"), 0.5, 0.5, 1)
+        end
+        
+        -- Mostrar tempo restante do auto-restore se ativo
+        if settings.autoRestoreTimeout and tempState.autoRestoreTimer then
+            GameTooltip:AddLine("Auto-restore in " .. settings.autoRestoreTimeout .. "s", 1, 1, 0)
+        end
+    else
+        GameTooltip:SetText("MagiButton", 1, 1, 1)
+        GameTooltip:AddLine("Toggle between morph and real character", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(" ", 1, 1, 1)
+        GameTooltip:AddLine("Left-Click: Hide morph temporarily", 0, 1, 0)
+        GameTooltip:AddLine("Right-Click: Options menu", 1, 1, 0)
+        GameTooltip:AddLine("Middle-Click: Permanent reset", 1, 0.5, 0)
+        
+        -- Mostrar morph atual se disponível
+        local currentMorph = ClickMorphMagiButton.GetCurrentSavedMorph()
+        if currentMorph then
+            GameTooltip:AddLine(" ", 1, 1, 1)
+            GameTooltip:AddLine("Current: " .. (currentMorph.name or "Unknown Morph"), 0.5, 0.5, 1)
+        end
+    end
+    
+    GameTooltip:Show()
+end
+
+function ClickMorphMagiButton.OnButtonLeave()
+    GameTooltip:Hide()
+end
+
+-- Criar o botão físico
+function ClickMorphMagiButton.CreateButton()
+    local system = ClickMorphMagiButton.buttonSystem
+    
+    if system.button then
+        MagiDebugPrint("Button already exists")
+        return system.button
+    end
+    
+    MagiDebugPrint("Creating MagiButton")
+    
+    -- Criar frame do botão
+    local button = CreateFrame("Button", "ClickMorphMagiButton", UIParent)
+    button:SetSize(system.settings.buttonSize, system.settings.buttonSize)
+    button:SetPoint("CENTER", UIParent, "CENTER", system.position.x, system.position.y)
+    
+    -- Texturas
+    button:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+    button:SetPushedTexture("Interface\\Buttons\\UI-Panel-Button-Down")
+    button:SetHighlightTexture("Interface\\Buttons\\UI-Panel-Button-Highlight", "ADD")
+    
+    -- Ícone
+    local icon = button:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(24, 24)
+    icon:SetPoint("CENTER")
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Gear_01")
+    button.icon = icon
+    
+    -- Event handlers
+    button:SetScript("OnClick", ClickMorphMagiButton.OnButtonClick)
+    button:SetScript("OnEnter", ClickMorphMagiButton.OnButtonEnter)
+    button:SetScript("OnLeave", ClickMorphMagiButton.OnButtonLeave)
+    
+    -- Tornar movível
+    button:SetMovable(true)
+    button:EnableMouse(true)
+    button:RegisterForClicks("AnyUp")
+    button:RegisterForDrag("LeftButton")
+    
+    button:SetScript("OnDragStart", function(self)
+        self:StartMoving()
     end)
     
-    system.eventFrame = frame
-    MagiDebugPrint("Event frame created and registered")
-    return frame
+    button:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        -- Salvar posição
+        local point, _, _, x, y = self:GetPoint()
+        system.position.x = x
+        system.position.y = y
+        MagiDebugPrint("Button moved to:", x, y)
+    end)
+    
+    -- Salvar referência
+    system.button = button
+    
+    MagiDebugPrint("MagiButton created successfully")
+    return button
 end
 
--- Ativar sistema MagiButton
-function ClickMorphMagiButton.Activate()
-    local system = ClickMorphMagiButton.system
+-- Toggle visibilidade do botão
+function ClickMorphMagiButton.ToggleVisibility()
+    local system = ClickMorphMagiButton.buttonSystem
     
-    if system.isActive then
-        print("|cfffff00MagiButton:|r System already active")
+    if not system.button then
+        ClickMorphMagiButton.CreateButton()
         return
     end
     
-    -- Hook SendChatMessage
-    ClickMorphMagiButton.HookSendChatMessage()
+    system.isVisible = not system.isVisible
     
-    -- Criar event frame
-    ClickMorphMagiButton.CreateEventFrame()
-    
-    -- Inicializar morph atual
-    ClickMorphMagiButton.system.currentMorph = ClickMorphMagiButton.CreateEmptyMorph()
-    
-    system.isActive = true
-    
-    print("|cff00ff00MagiButton:|r System activated!")
-    print("|cff00ff00MagiButton:|r Auto-restore:", ClickMorphMagiButtonSV.autoRestore and "ON" or "OFF")
-    print("|cff00ff00MagiButton:|r Command interception:", ClickMorphMagiButtonSV.interceptCommands and "ON" or "OFF")
-    
-    MagiDebugPrint("MagiButton system fully activated")
+    if system.isVisible then
+        system.button:Show()
+        print("|cff9933ffMagiButton:|r Button shown")
+    else
+        system.button:Hide()
+        print("|cff9933ffMagiButton:|r Button hidden")
+    end
 end
 
--- Desativar sistema
-function ClickMorphMagiButton.Deactivate()
-    local system = ClickMorphMagiButton.system
+-- Mostrar/esconder botão
+function ClickMorphMagiButton.ShowButton()
+    local system = ClickMorphMagiButton.buttonSystem
     
-    if not system.isActive then
-        print("|cfffff00MagiButton:|r System not active")
-        return
+    if not system.button then
+        ClickMorphMagiButton.CreateButton()
     end
     
-    -- Restaurar SendChatMessage original
-    if system.originalSendChatMessage then
-        SendChatMessage = system.originalSendChatMessage
-        system.originalSendChatMessage = nil
-    end
-    
-    -- Unregister eventos
-    if system.eventFrame then
-        system.eventFrame:UnregisterAllEvents()
-        system.eventFrame = nil
-    end
-    
-    system.isActive = false
-    
-    print("|cff00ff00MagiButton:|r System deactivated")
-    MagiDebugPrint("MagiButton system deactivated")
+    system.button:Show()
+    system.isVisible = true
 end
 
--- Obter morph atual para outros sistemas (API pública)
-function ClickMorphMagiButton.GetCurrentMorph()
-    return CopyTable(ClickMorphMagiButton.system.currentMorph)
+function ClickMorphMagiButton.HideButton()
+    local system = ClickMorphMagiButton.buttonSystem
+    
+    if system.button then
+        system.button:Hide()
+        system.isVisible = false
+    end
 end
 
 -- Status do sistema
 function ClickMorphMagiButton.ShowStatus()
-    local system = ClickMorphMagiButton.system
-    local lastMorph = ClickMorphMagiButtonSV.lastMorph
+    local system = ClickMorphMagiButton.buttonSystem
+    local tempState = system.temporaryState
     
-    print("|cff00ff00=== MAGIBUTTON STATUS ===|r")
-    print("Active:", system.isActive and "YES" or "NO")
-    print("Auto-restore:", ClickMorphMagiButtonSV.autoRestore and "ON" or "OFF")
-    print("Command interception:", ClickMorphMagiButtonSV.interceptCommands and "ON" or "OFF")
-    print("Debug mode:", ClickMorphMagiButtonSV.debugMode and "ON" or "OFF")
+    print("|cff9933ff=== MAGI BUTTON STATUS ===|r")
+    print("Button Visible:", system.isVisible and "YES" or "NO")
+    print("Button Created:", system.button and "YES" or "NO")
+    print("Temporary Reset State:", tempState.isTemporaryReset and "ACTIVE" or "INACTIVE")
+    print("Auto-Restore Timeout:", system.settings.autoRestoreTimeout and "ON" or "OFF")
+    print("Show Tooltips:", system.settings.showTooltips and "ON" or "OFF")
+    print("Debug Mode:", system.settings.debugMode and "ON" or "OFF")
     
-    if lastMorph and lastMorph.timestamp then
-        local timeStr = date("%Y-%m-%d %H:%M:%S", lastMorph.timestamp)
-        print("Last saved morph:", timeStr)
-        print("Player:", (lastMorph.playerName or "Unknown") .. "@" .. (lastMorph.realmName or "Unknown"))
-        
-        if lastMorph.race then
-            print("Race/Gender:", lastMorph.race .. "/" .. (lastMorph.gender or 0))
-        end
-        
-        if lastMorph.scale then
-            print("Scale:", lastMorph.scale)
-        end
-        
-        if lastMorph.items then
-            local itemCount = 0
-            for _ in pairs(lastMorph.items) do
-                itemCount = itemCount + 1
-            end
-            print("Morphed items:", itemCount)
-        end
-    else
-        print("No saved morph available")
+    if tempState.savedMorph then
+        print("Saved Morph:", tempState.savedMorph.name or "Unknown")
     end
     
-    -- Integração info
-    print("SaveHub Integration:", ClickMorphSaveHub and "AVAILABLE" or "NOT LOADED")
+    if system.button then
+        print("Position: " .. system.position.x .. ", " .. system.position.y)
+    end
 end
 
 -- Comandos do MagiButton
-SLASH_CLICKMORPH_MAGI1 = "/magi"
-SlashCmdList.CLICKMORPH_MAGI = function(arg)
-    local args = {}
-    for word in arg:gmatch("%S+") do
-        table.insert(args, word)
-    end
+SLASH_CLICKMORPH_MAGIBUTTON1 = "/cmbutton"
+SlashCmdList.CLICKMORPH_MAGIBUTTON = function(arg)
+    local command = string.lower(arg or "")
     
-    local command = string.lower(args[1] or "")
-    
-    if command == "on" or command == "activate" then
-        ClickMorphMagiButton.Activate()
-    elseif command == "off" or command == "deactivate" then
-        ClickMorphMagiButton.Deactivate()
-    elseif command == "restore" then
-        ClickMorphMagiButton.RestoreLastMorph()
-    elseif command == "save" then
-        ClickMorphMagiButton.SaveCurrentMorph()
-        print("|cff00ff00MagiButton:|r Current morph saved manually")
-    elseif command == "autorestore" then
-        ClickMorphMagiButtonSV.autoRestore = not ClickMorphMagiButtonSV.autoRestore
-        print("|cff00ff00MagiButton:|r Auto-restore", ClickMorphMagiButtonSV.autoRestore and "ON" or "OFF")
-    elseif command == "intercept" then
-        ClickMorphMagiButtonSV.interceptCommands = not ClickMorphMagiButtonSV.interceptCommands
-        print("|cff00ff00MagiButton:|r Command interception", ClickMorphMagiButtonSV.interceptCommands and "ON" or "OFF")
+    if command == "show" or command == "" then
+        ClickMorphMagiButton.ShowButton()
+        
+    elseif command == "hide" then
+        ClickMorphMagiButton.HideButton()
+        
+    elseif command == "toggle" then
+        ClickMorphMagiButton.ToggleVisibility()
+        
+    elseif command == "reset" then
+        ClickMorphMagiButton.PermanentReset()
+        
     elseif command == "status" then
         ClickMorphMagiButton.ShowStatus()
+        
     elseif command == "debug" then
-        ClickMorphMagiButtonSV.debugMode = not ClickMorphMagiButtonSV.debugMode
-        print("|cff00ff00MagiButton:|r Debug mode", ClickMorphMagiButtonSV.debugMode and "ON" or "OFF")
+        ClickMorphMagiButton.buttonSystem.settings.debugMode = not ClickMorphMagiButton.buttonSystem.settings.debugMode
+        print("|cff9933ffMagiButton:|r Debug mode", ClickMorphMagiButton.buttonSystem.settings.debugMode and "ON" or "OFF")
+        
+    elseif command == "timeout" then
+        ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout = not ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout
+        print("|cff9933ffMagiButton:|r Auto-restore timeout", ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout and "ON" or "OFF")
+        
     else
-        print("|cff00ff00MagiButton Commands:|r")
-        print("/magi on - Activate system")
-        print("/magi off - Deactivate system") 
-        print("/magi restore - Restore last saved morph")
-        print("/magi save - Manually save current morph")
-        print("/magi autorestore - Toggle auto-restore on map/reload")
-        print("/magi intercept - Toggle command interception")
-        print("/magi status - Show system status")
-        print("/magi debug - Toggle debug mode")
+        print("|cff9933ffMagiButton Commands:|r")
+        print("/cmbutton show - Show the MagiButton")
+        print("/cmbutton hide - Hide the MagiButton") 
+        print("/cmbutton toggle - Toggle button visibility")
+        print("/cmbutton reset - Permanent reset (clear all morphs)")
+        print("/cmbutton status - Show system status")
+        print("/cmbutton timeout - Toggle auto-restore timeout")
+        print("/cmbutton debug - Toggle debug mode")
         print("")
-        print("Use the iMorph tab interface for enhanced functionality!")
+        print("|cffccccccLeft-Click: Toggle between morph and real character|r")
+        print("|cffccccccRight-Click: Options menu|r")
+        print("|cffccccccMiddle-Click: Permanent reset|r")
+        print("|cffccccccDrag to move the button|r")
     end
 end
 
-print("|cff00ff00ClickMorph MagiButton System|r loaded!")
-print("Use |cffffcc00/magi on|r to activate auto-save/restore")
-print("Enhanced SaveHub integration ready!")
+-- Integration hook para quando outros módulos aplicam morphs
+function ClickMorphMagiButton.OnMorphApplied(morphData)
+    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
+    
+    -- Se estava em reset temporário, cancelar porque um novo morph foi aplicado
+    if tempState.isTemporaryReset then
+        MagiDebugPrint("New morph applied while in temporary reset, canceling temporary state")
+        tempState.isTemporaryReset = false
+        tempState.savedMorph = nil
+        ClickMorphMagiButton.CancelAutoRestoreTimer()
+        ClickMorphMagiButton.UpdateButtonAppearance()
+    end
+end
+
+-- Public API para outros módulos
+ClickMorphMagiButton.API = {
+    -- Notificar que um morph foi aplicado
+    OnMorphApplied = ClickMorphMagiButton.OnMorphApplied,
+    
+    -- Obter estado atual
+    GetState = function()
+        return ClickMorphMagiButton.buttonSystem.temporaryState.isTemporaryReset
+    end,
+    
+    -- Reset permanente
+    PermanentReset = ClickMorphMagiButton.PermanentReset
+}
+
+-- Inicialização
+local function InitializeMagiButton()
+    MagiDebugPrint("Initializing MagiButton...")
+    
+    -- Criar botão após delay para garantir que UI está carregada
+    local eventFrame = CreateFrame("Frame")
+    eventFrame:RegisterEvent("ADDON_LOADED")
+    eventFrame:RegisterEvent("PLAYER_LOGIN")
+    
+    eventFrame:SetScript("OnEvent", function(self, event, addonName)
+        if event == "ADDON_LOADED" and addonName == "ClickMorph" then
+            MagiDebugPrint("ClickMorph loaded")
+            
+        elseif event == "PLAYER_LOGIN" then
+            C_Timer.After(1, function()
+                ClickMorphMagiButton.CreateButton()
+                MagiDebugPrint("MagiButton ready")
+            end)
+        end
+    end)
+end
+
+InitializeMagiButton()
+
+print("|cff9933ffClickMorph MagiButton Enhanced|r loaded!")
+print("Use |cffffcc00/cmbutton show|r to display the magic button")
+MagiDebugPrint("MagiButton.lua loaded successfully")

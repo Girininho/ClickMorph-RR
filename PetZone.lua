@@ -1,385 +1,403 @@
--- PetZone.lua - Sistema de Pets com APIs experimentais para ClickMorph iMorph Edition
--- Interface estilo Wardrobe com morfagem de player e pets
+-- PetZone.lua
+-- Sistema completo para morphs de pets/battle pets
 
 ClickMorphPetZone = {}
 
 -- Sistema de pets
 ClickMorphPetZone.petSystem = {
     isActive = false,
-    selectedPet = nil,
     selectedCategory = "All",
-    currentMode = "player", -- "player" ou "playerpet"
-    debugMode = false,
     searchText = "",
-    useAPIData = false -- Toggle para usar dados da API vs hardcode
+    favorites = {},
+    debugMode = false,
+    useAPIData = false, -- Usar dados hardcoded por padrão
+    categoryDropdown = nil
 }
 
--- Debug print
+-- Base de dados de pets expandida
+ClickMorphPetZone.PET_DATABASE = {
+    -- Pets Clássicos
+    {
+        name = "Classic Pets",
+        category = "Classic",
+        pets = {
+            {
+                category = "Classic",
+                name = "Mechanical Squirrel",
+                displayID = 328,
+                rarity = 2,
+                description = "A tiny mechanical companion"
+            },
+            {
+                category = "Classic",
+                name = "Pet Bombling",
+                displayID = 777,
+                rarity = 3,
+                description = "Explosive little friend"
+            },
+            {
+                category = "Classic",
+                name = "Whiskers the Rat",
+                displayID = 1141,
+                rarity = 1,
+                description = "A simple brown rat"
+            },
+            {
+                category = "Classic",
+                name = "Cockroach",
+                displayID = 1447,
+                rarity = 1,
+                description = "Surprisingly resilient"
+            },
+            {
+                category = "Classic",
+                name = "Prairie Dog",
+                displayID = 1412,
+                rarity = 2,
+                description = "Curious little critter"
+            }
+        }
+    },
+    
+    -- Pets Draenei/Alien
+    {
+        name = "Draenei Pets",
+        category = "Draenei",
+        pets = {
+            {
+                category = "Draenei",
+                name = "Blue Moth",
+                displayID = 15897,
+                rarity = 2,
+                description = "Beautiful draenei moth"
+            },
+            {
+                category = "Draenei",
+                name = "Red Moth",
+                displayID = 15898,
+                rarity = 2,
+                description = "Crimson draenei moth"
+            },
+            {
+                category = "Draenei",
+                name = "Yellow Moth",
+                displayID = 15899,
+                rarity = 2,
+                description = "Golden draenei moth"
+            },
+            {
+                category = "Draenei",
+                name = "White Moth",
+                displayID = 15900,
+                rarity = 3,
+                description = "Pure white draenei moth"
+            }
+        }
+    },
+    
+    -- Pets Mecânicos
+    {
+        name = "Mechanical Pets",
+        category = "Mechanical",
+        pets = {
+            {
+                category = "Mechanical",
+                name = "Mechanical Chicken",
+                displayID = 7383,
+                rarity = 3,
+                description = "Gnomish engineering marvel"
+            },
+            {
+                category = "Mechanical",
+                name = "Mechanical Dragonling",
+                displayID = 5524,
+                rarity = 4,
+                description = "Tiny mechanical dragon"
+            },
+            {
+                category = "Mechanical",
+                name = "Pet Robot",
+                displayID = 13069,
+                rarity = 3,
+                description = "Advanced robotic companion"
+            },
+            {
+                category = "Mechanical",
+                name = "Mechanical Toad",
+                displayID = 1420,
+                rarity = 2,
+                description = "Wind-up amphibian"
+            }
+        }
+    },
+    
+    -- Pets Exóticos
+    {
+        name = "Exotic Pets",
+        category = "Exotic",
+        pets = {
+            {
+                category = "Exotic",
+                name = "Tiny Emerald Whelpling",
+                displayID = 847,
+                rarity = 4,
+                description = "Baby green dragon"
+            },
+            {
+                category = "Exotic",
+                name = "Tiny Crimson Whelpling",
+                displayID = 848,
+                rarity = 4,
+                description = "Baby red dragon"
+            },
+            {
+                category = "Exotic",
+                name = "Azure Whelpling",
+                displayID = 849,
+                rarity = 4,
+                description = "Baby blue dragon"
+            },
+            {
+                category = "Exotic",
+                name = "Mini Diablo",
+                displayID = 850,
+                rarity = 4,
+                description = "Tiny Lord of Terror"
+            },
+            {
+                category = "Exotic",
+                name = "Zergling",
+                displayID = 1352,
+                rarity = 4,
+                description = "Starcraft zerg unit"
+            },
+            {
+                category = "Exotic",
+                name = "Panda Cub",
+                displayID = 1433,
+                rarity = 3,
+                description = "Adorable baby panda"
+            }
+        }
+    },
+    
+    -- Pets Undead
+    {
+        name = "Undead Pets",
+        category = "Undead",
+        pets = {
+            {
+                category = "Undead",
+                name = "Ghostly Skull",
+                displayID = 15202,
+                rarity = 3,
+                description = "Floating spectral skull"
+            },
+            {
+                category = "Undead",
+                name = "Bone Serpent",
+                displayID = 13435,
+                rarity = 3,
+                description = "Undead snake companion"
+            },
+            {
+                category = "Undead",
+                name = "Haunted Memento",
+                displayID = 25824,
+                rarity = 4,
+                description = "Ghostly reminder"
+            }
+        }
+    },
+    
+    -- Pets Aquáticos
+    {
+        name = "Aquatic Pets",
+        category = "Aquatic",
+        pets = {
+            {
+                category = "Aquatic",
+                name = "Tiny Goldfish",
+                displayID = 5017,
+                rarity = 1,
+                description = "Small golden fish"
+            },
+            {
+                category = "Aquatic",
+                name = "Baby Shark",
+                displayID = 4591,
+                rarity = 3,
+                description = "Miniature predator"
+            },
+            {
+                category = "Aquatic",
+                name = "Sea Turtle",
+                displayID = 9657,
+                rarity = 3,
+                description = "Slow but steady"
+            }
+        }
+    },
+    
+    -- Pets Voadores
+    {
+        name = "Flying Pets",
+        category = "Flying",
+        pets = {
+            {
+                category = "Flying",
+                name = "Parrot",
+                displayID = 9320,
+                rarity = 2,
+                description = "Colorful tropical bird"
+            },
+            {
+                category = "Flying",
+                name = "Owl",
+                displayID = 1955,
+                rarity = 2,
+                description = "Wise night bird"
+            },
+            {
+                category = "Flying",
+                name = "Bat",
+                displayID = 1554,
+                rarity = 1,
+                description = "Nocturnal flyer"
+            },
+            {
+                category = "Flying",
+                name = "Sprite Darter",
+                displayID = 6295,
+                rarity = 3,
+                description = "Magical fairy dragon"
+            }
+        }
+    },
+    
+    -- Pets Especiais/Raros
+    {
+        name = "Special Pets",
+        category = "Special",
+        pets = {
+            {
+                category = "Special",
+                name = "Mr. Wiggles",
+                displayID = 1430,
+                rarity = 4,
+                description = "The famous pig"
+            },
+            {
+                category = "Special",
+                name = "Sleepy Willy",
+                displayID = 13321,
+                rarity = 3,
+                description = "Drowsy companion"
+            },
+            {
+                category = "Special",
+                name = "Jubling",
+                displayID = 13583,
+                rarity = 4,
+                description = "Rare event pet"
+            },
+            {
+                category = "Special",
+                name = "Worg Pup",
+                displayID = 1922,
+                rarity = 3,
+                description = "Young wolf companion"
+            }
+        }
+    }
+}
+
+-- Debug print para pets
 local function PetDebugPrint(...)
     if ClickMorphPetZone.petSystem.debugMode then
         local args = {...}
         for i = 1, #args do
-            args[i] = tostring(args[i] or "nil")
+            if args[i] == nil then
+                args[i] = "nil"
+            elseif type(args[i]) ~= "string" then
+                args[i] = tostring(args[i])
+            end
         end
-        print("|cff66ff66Pet:|r", table.concat(args, " "))
+        local message = table.concat(args, " ")
+        print("|cff00ccffPetZone:|r", message)
     end
 end
 
--- ============================================================================
--- SEÇÃO DE TESTES: APIs COMENTADAS PARA DESCOBRIR DADOS DINÂMICOS
--- Descomente essas seções quando estiver no WoW para testar
--- ============================================================================
-
---[[
--- Teste 1: Descobrir pets do Pet Journal
+-- Função para testar Pet Journal API
 function ClickMorphPetZone.TestPetJournalAPI()
-    PetDebugPrint("=== TESTE: Pet Journal API ===")
-    local discoveredPets = {}
+    local pets = {}
     
-    if C_PetJournal then
-        local numPets = C_PetJournal.GetNumPets()
-        PetDebugPrint("Encontrados", numPets, "pets no journal")
-        
-        for i = 1, min(10, numPets) do -- Testar apenas os primeiros 10
-            local petID, speciesID, owned, customName, level, favorite, isRevoked, speciesName, icon, petType = C_PetJournal.GetPetInfoByIndex(i)
-            
-            if speciesID and speciesName and icon then
-                table.insert(discoveredPets, {
-                    name = speciesName,
-                    displayID = speciesID,
-                    icon = icon,
-                    source = "Pet Journal API",
-                    category = "Battle Pet",
-                    rarity = favorite and 4 or 2,
-                    owned = owned
-                })
-                
-                PetDebugPrint("Pet encontrado:", speciesName, "ID:", speciesID, "Owned:", owned and "SIM" or "NAO")
-            end
-        end
-    else
-        PetDebugPrint("Pet Journal API nao disponivel")
+    PetDebugPrint("Testing Pet Journal API...")
+    
+    if not C_PetJournal then
+        PetDebugPrint("C_PetJournal not available")
+        return pets
     end
     
-    return discoveredPets
+    -- Tentar obter pets do journal
+    local numPets = C_PetJournal.GetNumPets()
+    PetDebugPrint("Found", numPets, "pets in journal")
+    
+    for i = 1, math.min(numPets, 50) do -- Limite para teste
+        local petID, speciesID, isOwned, customName, level, favorite, isRevoked, name, icon, petType, companionID, tooltip, description, isWild, canBattle, isTradeable, isUnique = C_PetJournal.GetPetInfoByIndex(i)
+        
+        if petID and name then
+            table.insert(pets, {
+                category = "API",
+                name = customName or name,
+                displayID = speciesID or 1, -- Usar speciesID como displayID
+                rarity = isOwned and 3 or 1,
+                description = description or "Battle pet from API"
+            })
+        end
+    end
+    
+    PetDebugPrint("Loaded", #pets, "pets from Pet Journal API")
+    return pets
 end
 
--- Teste 2: Descobrir montarias que podem ser pets
+-- Função para testar Mount Journal API (alguns mounts podem ser considerados pets)
 function ClickMorphPetZone.TestMountJournalAPI()
-    PetDebugPrint("=== TESTE: Mount Journal API ===")
-    local mountPets = {}
+    local pets = {}
     
-    if C_MountJournal then
-        local numMounts = C_MountJournal.GetNumMounts()
-        PetDebugPrint("Encontradas", numMounts, "montarias no journal")
-        
-        for i = 1, min(10, numMounts) do -- Testar apenas as primeiras 10
-            local name, spellID, icon, isActive, isUsable, sourceType, isFavorite, isFactionSpecific, faction, shouldHideOnChar, isCollected, mountID = C_MountJournal.GetMountInfoByIndex(i)
-            
-            if name and icon and isCollected then
-                -- Tentar obter Display ID da montaria
-                local mountInfo = C_MountJournal.GetMountInfoExtraByID(mountID)
-                if mountInfo and mountInfo.creatureDisplayInfoID then
-                    table.insert(mountPets, {
-                        name = name .. " (Mount)",
-                        displayID = mountInfo.creatureDisplayInfoID,
-                        icon = icon,
-                        source = "Mount Journal API",
-                        category = "Mount Pet",
-                        rarity = isFavorite and 4 or 3
-                    })
-                    
-                    PetDebugPrint("Montaria encontrada:", name, "DisplayID:", mountInfo.creatureDisplayInfoID)
-                end
-            end
-        end
-    else
-        PetDebugPrint("Mount Journal API nao disponivel")
+    PetDebugPrint("Testing Mount Journal API for pet-like mounts...")
+    
+    if not C_MountJournal then
+        PetDebugPrint("C_MountJournal not available")
+        return pets
     end
     
-    return mountPets
-end
-
--- Teste 3: Validar Display IDs por força bruta (CUIDADO: pode ser laggy)
-function ClickMorphPetZone.TestDisplayIDRange(startID, endID)
-    PetDebugPrint("=== TESTE: Display ID range", startID, "ate", endID, "===")
+    local numMounts = C_MountJournal.GetNumMounts()
+    PetDebugPrint("Found", numMounts, "mounts in journal")
     
-    for displayID = startID, endID do
-        -- Testar comando .morph para ver se é válido
-        local testCmd = ".morph " .. displayID
-        PetDebugPrint("Testando Display ID:", displayID)
-        
-        -- DESCOMENTE para testar de verdade (vai fazer os morphs)
-        -- SendChatMessage(testCmd, "SAY")
-        
-        -- Delay para não sobrecarregar
-        if displayID % 10 == 0 then
-            C_Timer.After(1, function() end)
-        end
-    end
-end
-
--- Teste 4: Criar modelo 3D temporário para validar Display ID
-function ClickMorphPetZone.TestModelValidation(displayID)
-    PetDebugPrint("=== TESTE: Validacao de modelo para DisplayID", displayID, "===")
-    
-    local testFrame = CreateFrame("PlayerModel", nil, UIParent)
-    testFrame:SetSize(1, 1) -- Invisivel
-    testFrame:SetPoint("CENTER")
-    
-    -- Tentar carregar o modelo
-    testFrame:SetDisplayInfo(displayID)
-    
-    C_Timer.After(0.5, function()
-        local modelFile = testFrame:GetModelFileID()
-        if modelFile and modelFile > 0 then
-            PetDebugPrint("Display ID", displayID, "tem modelo valido:", modelFile)
-            testFrame:SetParent(nil)
-            return true
-        else
-            PetDebugPrint("Display ID", displayID, "nao tem modelo valido")
-            testFrame:SetParent(nil)
-            return false
-        end
-    end)
-end
-
--- Teste 5: Hook para descobrir ícones de criaturas automaticamente
-function ClickMorphPetZone.TestIconDiscovery()
-    PetDebugPrint("=== TESTE: Descobrir icones de criaturas ===")
-    
-    local foundIcons = {}
-    
-    -- Testar FileData IDs comuns de pets
-    local commonPetPaths = {
-        "Interface\\Icons\\INV_Pet_",
-        "Interface\\Icons\\Ability_Hunter_Pet_",
-        "Interface\\Icons\\INV_Box_PetCarrier_"
+    -- Alguns mounts pequenos podem ser usados como "pets"
+    local petLikeMounts = {
+        -- IDs de exemplo de mounts pequenos que poderiam ser pets
+        {mountID = 382, name = "Swift Brown Wolf", category = "Mount-Pet"},
+        {mountID = 6648, name = "Swift Yellow Mechanostrider", category = "Mount-Pet"},
     }
     
-    for _, basePath in ipairs(commonPetPaths) do
-        for i = 1, 50 do
-            local iconPath = basePath .. string.format("%02d", i)
-            -- Aqui você poderia testar se o ícone existe
-            table.insert(foundIcons, iconPath)
-            PetDebugPrint("Testando icone:", iconPath)
+    for _, mountData in ipairs(petLikeMounts) do
+        local name, spellID, icon, isActive, isUsable, sourceType, isFavorite, isFactionSpecific, faction, shouldHideOnChar, isCollected, mountID = C_MountJournal.GetMountInfoByID(mountData.mountID)
+        
+        if name then
+            table.insert(pets, {
+                category = mountData.category,
+                name = name .. " (Pet Mode)",
+                displayID = mountData.mountID,
+                rarity = isCollected and 3 or 2,
+                description = "Mount used as pet companion"
+            })
         end
     end
     
-    return foundIcons
-end
---]]
-
--- Base de dados hardcoded (fallback)
-ClickMorphPetZone.PET_DATABASE = {
-    -- Companions Clássicos
-    {
-        name = "Classic Companions",
-        category = "Companion", 
-        icon = "Interface\\Icons\\INV_Box_PetCarrier_01",
-        pets = {
-            {
-                name = "Wolf Companion", 
-                displayID = 1821, 
-                icon = "Interface\\Icons\\Ability_Hunter_Pet_Wolf",
-                description = "Loyal wolf companion", 
-                rarity = 2,
-                source = "Hunter Pet Collection"
-            },
-            {
-                name = "House Cat", 
-                displayID = 892, 
-                icon = "Interface\\Icons\\INV_Box_PetCarrier_01",
-                description = "Adorable house cat", 
-                rarity = 1,
-                source = "Basic Pet Collection"
-            },
-            {
-                name = "Bear Cub", 
-                displayID = 2281, 
-                icon = "Interface\\Icons\\Ability_Hunter_Pet_Bear",
-                description = "Playful bear cub", 
-                rarity = 2,
-                source = "Wilderness Collection"
-            },
-            {
-                name = "Owl", 
-                displayID = 1557, 
-                icon = "Interface\\Icons\\Ability_Hunter_Pet_Owl",
-                description = "Wise owl", 
-                rarity = 2,
-                source = "Avian Collection"
-            },
-            {
-                name = "Rabbit", 
-                displayID = 721, 
-                icon = "Interface\\Icons\\INV_Pet_Rabbit",
-                description = "Quick forest rabbit", 
-                rarity = 1,
-                source = "Woodland Creatures"
-            }
-        }
-    },
-    -- Battle Pets
-    {
-        name = "Battle Pets",
-        category = "Battle",
-        icon = "Interface\\Icons\\INV_Pet_BattlePetTraining",
-        pets = {
-            {
-                name = "Mini Ragnaros", 
-                displayID = 37671, 
-                icon = "Interface\\Icons\\INV_Ragnaros",
-                description = "Miniature fire lord", 
-                rarity = 4,
-                source = "Blizzard Store"
-            },
-            {
-                name = "Zergling", 
-                displayID = 6532, 
-                icon = "Interface\\Icons\\INV_Pet_Zergling",
-                description = "Starcraft zergling", 
-                rarity = 4,
-                source = "Collector's Edition"
-            },
-            {
-                name = "Murloc Tadpole", 
-                displayID = 15371, 
-                icon = "Interface\\Icons\\INV_Pet_PinkMurloc",
-                description = "Baby murloc companion", 
-                rarity = 3,
-                source = "Murloc Collection"
-            },
-            {
-                name = "Mechanical Squirrel", 
-                displayID = 28085, 
-                icon = "Interface\\Icons\\INV_Pet_MechanicalSquirrel",
-                description = "Clockwork marvel", 
-                rarity = 3,
-                source = "Engineering"
-            }
-        }
-    },
-    -- Aquatic Creatures
-    {
-        name = "Aquatic Creatures",
-        category = "Aquatic",
-        icon = "Interface\\Icons\\Ability_Druid_AquaticForm",
-        pets = {
-            {
-                name = "Sea Turtle", 
-                displayID = 9991, 
-                icon = "Interface\\Icons\\Ability_Hunter_Pet_Turtle",
-                description = "Ancient sea turtle", 
-                rarity = 3,
-                source = "Deep Ocean"
-            },
-            {
-                name = "Great White Shark", 
-                displayID = 20217, 
-                icon = "Interface\\Icons\\INV_Pet_Shark",
-                description = "Ocean predator", 
-                rarity = 4,
-                source = "Rare Ocean Spawn"
-            },
-            {
-                name = "Seahorse", 
-                displayID = 35637, 
-                icon = "Interface\\Icons\\INV_Pet_Seahorse",
-                description = "Mystical seahorse", 
-                rarity = 3,
-                source = "Vashj'ir Discovery"
-            }
-        }
-    }
-}
-
--- Verificar se player pode ter pets
-function ClickMorphPetZone.CanHavePets()
-    local playerClass = select(2, UnitClass("player"))
-    local hasPet = UnitExists("pet")
-    
-    local petClasses = {
-        ["HUNTER"] = true,
-        ["WARLOCK"] = true,
-        ["DEATHKNIGHT"] = true,
-        ["MAGE"] = true,
-        ["SHAMAN"] = true,
-        ["PRIEST"] = true,
-    }
-    
-    return petClasses[playerClass] or false, hasPet
-end
-
--- Aplicar morph no player
-function ClickMorphPetZone.MorphPlayerToPet(petData)
-    if not petData or not petData.displayID then
-        print("|cffff0000Pet Zone:|r Invalid pet data")
-        return false
-    end
-    
-    PetDebugPrint("Morphing player to:", petData.name, "DisplayID:", petData.displayID)
-    
-    local morphCmd = string.format(".morph %d", petData.displayID)
-    SendChatMessage(morphCmd, "SAY")
-    
-    ClickMorphPetZone.petSystem.selectedPet = petData
-    print("|cff00ff00Pet Zone:|r Player morphed to " .. petData.name)
-    
-    -- Integrar com MagiButton se disponível
-    if ClickMorphMagiButton and ClickMorphMagiButton.system then
-        ClickMorphMagiButton.system.currentMorph.petMorph = {
-            displayID = petData.displayID,
-            name = petData.name,
-            mode = "player"
-        }
-    end
-    
-    return true
-end
-
--- Aplicar morph no pet
-function ClickMorphPetZone.MorphPlayerPet(petData)
-    if not petData or not petData.displayID then
-        print("|cffff0000Pet Zone:|r Invalid pet data")
-        return false
-    end
-    
-    local canHavePet, hasPet = ClickMorphPetZone.CanHavePets()
-    
-    if not canHavePet then
-        print("|cffff0000Pet Zone:|r Your class cannot have pets")
-        return false
-    end
-    
-    if not hasPet then
-        print("|cffff0000Pet Zone:|r You need an active pet")
-        return false
-    end
-    
-    PetDebugPrint("Morphing pet to:", petData.name, "DisplayID:", petData.displayID)
-    
-    local morphPetCmd = string.format(".morphpet %d", petData.displayID)
-    SendChatMessage(morphPetCmd, "SAY")
-    
-    print("|cff00ff00Pet Zone:|r Pet morphed to " .. petData.name)
-    return true
-end
-
--- Reset morphs
-function ClickMorphPetZone.ResetMorphs()
-    PetDebugPrint("Resetting morphs")
-    
-    SendChatMessage(".reset", "SAY")
-    
-    local canHavePet, hasPet = ClickMorphPetZone.CanHavePets()
-    if canHavePet and hasPet then
-        C_Timer.After(0.5, function()
-            SendChatMessage(".morphpet 0", "SAY")
-        end)
-    end
-    
-    print("|cff00ff00Pet Zone:|r All morphs reset")
+    PetDebugPrint("Loaded", #pets, "pet-like mounts from Mount Journal API")
+    return pets
 end
 
 -- Obter pets filtrados
@@ -440,18 +458,124 @@ function ClickMorphPetZone.GetFilteredPets()
         end
     end
     
+    PetDebugPrint("Filtered pets:", #filteredPets)
     return filteredPets
 end
 
 -- Cores por raridade
 function ClickMorphPetZone.GetRarityColor(rarity)
     local colors = {
-        [1] = {1, 1, 1},        -- White
-        [2] = {0.12, 1, 0},     -- Green
-        [3] = {0, 0.44, 0.87},  -- Blue
-        [4] = {0.64, 0.21, 0.93} -- Purple
+        [1] = {1, 1, 1},        -- White (Common)
+        [2] = {0.12, 1, 0},     -- Green (Uncommon)
+        [3] = {0, 0.44, 0.87},  -- Blue (Rare)
+        [4] = {0.64, 0.21, 0.93} -- Purple (Epic)
     }
     return colors[rarity] or colors[1]
+end
+
+-- Menu de categoria dropdown
+function ClickMorphPetZone.ShowCategoryMenu(anchor)
+    local system = ClickMorphPetZone.petSystem
+    local categories = {"All", "Classic", "Draenei", "Mechanical", "Exotic", "Undead", "Aquatic", "Flying", "Special"}
+    
+    local menu = CreateFrame("Frame", nil, anchor, "UIDropDownMenuTemplate")
+    
+    local function OnCategorySelect(self, category)
+        system.selectedCategory = category
+        system.categoryDropdown:SetText(category)
+        ClickMorphPetZone.RefreshPetGrid()
+        CloseDropDownMenus()
+    end
+    
+    local menuList = {}
+    for _, category in ipairs(categories) do
+        table.insert(menuList, {
+            text = category,
+            func = function() OnCategorySelect(nil, category) end,
+            checked = (category == system.selectedCategory)
+        })
+    end
+    
+    EasyMenu(menuList, menu, "cursor", 0, 0, "MENU")
+end
+
+-- Refresh do grid de pets
+function ClickMorphPetZone.RefreshPetGrid()
+    if not ClickMorphPetZone.petGrid then return end
+    
+    local pets = ClickMorphPetZone.GetFilteredPets()
+    local grid = ClickMorphPetZone.petGrid
+    
+    -- Limpar botões existentes
+    for i = 1, #grid.buttons do
+        grid.buttons[i]:Hide()
+    end
+    
+    -- Mostrar pets filtrados
+    for i = 1, math.min(#pets, #grid.buttons) do
+        local button = grid.buttons[i]
+        local pet = pets[i]
+        
+        button.pet = pet
+        button.icon:SetTexture(GetItemIcon(8498) or "Interface\\Icons\\INV_Box_PetCarrier_01")
+        
+        -- Cor da borda por raridade
+        local r, g, b = unpack(ClickMorphPetZone.GetRarityColor(pet.rarity))
+        if button.IconBorder then
+            button.IconBorder:SetVertexColor(r, g, b)
+            button.IconBorder:Show()
+        end
+        
+        button:Show()
+    end
+    
+    PetDebugPrint("Grid refreshed with", #pets, "pets")
+end
+
+-- Criar botão de pet
+function ClickMorphPetZone.CreatePetButton(parent, index)
+    local button = CreateFrame("Button", nil, parent, "ItemButtonTemplate")
+    button:SetSize(40, 40)
+    
+    -- Tooltip
+    button:SetScript("OnEnter", function(self)
+        if self.pet then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(self.pet.name, 1, 1, 1)
+            GameTooltip:AddLine(self.pet.description, 1, 1, 1, true)
+            
+            local rarity = self.pet.rarity
+            local rarityText = {"Common", "Uncommon", "Rare", "Epic"}
+            local r, g, b = unpack(ClickMorphPetZone.GetRarityColor(rarity))
+            GameTooltip:AddLine(rarityText[rarity] or "Unknown", r, g, b)
+            
+            GameTooltip:Show()
+        end
+    end)
+    
+    button:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
+    -- Clique para aplicar morph
+    button:SetScript("OnClick", function(self, btn)
+        if self.pet and btn == "LeftButton" then
+            PetDebugPrint("Applying pet morph:", self.pet.name, "DisplayID:", self.pet.displayID)
+            
+            -- Comando SetDisplayId via chat
+            SendChatMessage(".morph " .. self.pet.displayID, "GUILD")
+            
+            -- Feedback visual
+            self:SetAlpha(0.5)
+            C_Timer.After(0.2, function()
+                if self then
+                    self:SetAlpha(1.0)
+                end
+            end)
+        end
+    end)
+    
+    return button
 end
 
 -- Criar interface estilo Wardrobe para CusTab
@@ -464,412 +588,244 @@ function ClickMorphPetZone.CreatePetZoneContent(parentFrame)
     -- Header
     local header = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     header:SetPoint("TOPLEFT", 10, -10)
-    header:SetText("Pet Zone Collection")
+    header:SetText("Pet Zone - Battle Pet Collection")
     
-    -- Controles superiores
-    local controlFrame = CreateFrame("Frame", nil, content)
-    controlFrame:SetSize(390, 50)
-    controlFrame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -10)
+    -- Filtros superiores (estilo Wardrobe)
+    local filterFrame = CreateFrame("Frame", nil, content)
+    filterFrame:SetSize(390, 35)
+    filterFrame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -10)
     
-    -- Mode buttons
-    local modeLabel = controlFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    modeLabel:SetPoint("LEFT", 0, 15)
-    modeLabel:SetText("Mode:")
-    
-    local playerModeBtn = CreateFrame("Button", nil, controlFrame, "UIPanelButtonTemplate")
-    playerModeBtn:SetSize(80, 20)
-    playerModeBtn:SetPoint("LEFT", modeLabel, "RIGHT", 5, 0)
-    playerModeBtn:SetText("Player")
-    playerModeBtn:SetScript("OnClick", function()
-        system.currentMode = "player"
-        ClickMorphPetZone.UpdateModeButtons()
-    end)
-    system.playerModeBtn = playerModeBtn
-    
-    local petModeBtn = CreateFrame("Button", nil, controlFrame, "UIPanelButtonTemplate")
-    petModeBtn:SetSize(80, 20)
-    petModeBtn:SetPoint("LEFT", playerModeBtn, "RIGHT", 5, 0)
-    petModeBtn:SetText("Pet")
-    petModeBtn:SetScript("OnClick", function()
-        system.currentMode = "playerpet"
-        ClickMorphPetZone.UpdateModeButtons()
-    end)
-    system.petModeBtn = petModeBtn
-    
-    -- Category dropdown
-    local categoryLabel = controlFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    categoryLabel:SetPoint("LEFT", petModeBtn, "RIGHT", 15, 0)
+    -- Dropdown de categoria
+    local categoryLabel = filterFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    categoryLabel:SetPoint("LEFT", filterFrame, "LEFT", 0, 10)
     categoryLabel:SetText("Category:")
     
-    local categoryDropdown = CreateFrame("Button", nil, controlFrame, "UIPanelButtonTemplate")
-    categoryDropdown:SetSize(80, 20)
+    local categoryDropdown = CreateFrame("Button", nil, filterFrame, "UIPanelButtonTemplate")
+    categoryDropdown:SetSize(100, 20)
     categoryDropdown:SetPoint("LEFT", categoryLabel, "RIGHT", 5, 0)
-    categoryDropdown:SetText("All")
+    categoryDropdown:SetText(system.selectedCategory)
+    categoryDropdown:SetScript("OnClick", function()
+        ClickMorphPetZone.ShowCategoryMenu(categoryDropdown)
+    end)
     system.categoryDropdown = categoryDropdown
     
-    -- Search box
-    local searchLabel = controlFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    searchLabel:SetPoint("LEFT", 0, -15)
+    -- Caixa de busca
+    local searchLabel = filterFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    searchLabel:SetPoint("LEFT", categoryDropdown, "RIGHT", 20, 0)
     searchLabel:SetText("Search:")
     
-    local searchBox = CreateFrame("EditBox", nil, controlFrame, "InputBoxTemplate")
-    searchBox:SetSize(100, 20)
+    local searchBox = CreateFrame("EditBox", nil, filterFrame, "InputBoxTemplate")
+    searchBox:SetSize(120, 20)
     searchBox:SetPoint("LEFT", searchLabel, "RIGHT", 5, 0)
     searchBox:SetAutoFocus(false)
     searchBox:SetScript("OnTextChanged", function(self)
         system.searchText = self:GetText()
         ClickMorphPetZone.RefreshPetGrid()
     end)
-    system.searchBox = searchBox
     
-    -- ============================================================================
-    -- TOGGLE PARA TESTES DA API (descomente para testar)
-    -- ============================================================================
-    --[[
-    local apiToggle = CreateFrame("CheckButton", nil, controlFrame, "ChatConfigCheckButtonTemplate")
-    apiToggle:SetPoint("LEFT", searchBox, "RIGHT", 20, 0)
-    apiToggle.Text:SetText("Test API")
+    -- Toggle API/Hardcode
+    local apiToggle = CreateFrame("CheckButton", nil, filterFrame, "ChatConfigCheckButtonTemplate")
+    apiToggle:SetPoint("RIGHT", filterFrame, "RIGHT", 0, 0)
+    apiToggle:SetSize(20, 20)
+    apiToggle.Text:SetText("Use API")
+    apiToggle.Text:SetPoint("LEFT", apiToggle, "RIGHT", 2, 0)
+    apiToggle:SetChecked(system.useAPIData)
     apiToggle:SetScript("OnClick", function(self)
         system.useAPIData = self:GetChecked()
         ClickMorphPetZone.RefreshPetGrid()
-        PetDebugPrint("API Test mode:", system.useAPIData and "ON" or "OFF")
+        PetDebugPrint("API mode:", system.useAPIData and "ON" or "OFF")
     end)
-    --]]
     
-    -- Grid area
-    local scrollFrame = CreateFrame("ScrollFrame", nil, content, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetSize(375, 230)
-    scrollFrame:SetPoint("TOPLEFT", controlFrame, "BOTTOMLEFT", 0, -10)
+    -- Grid de pets (4x6)
+    local gridFrame = CreateFrame("ScrollFrame", nil, content, "UIPanelScrollFrameTemplate")
+    gridFrame:SetSize(340, 300)
+    gridFrame:SetPoint("TOPLEFT", filterFrame, "BOTTOMLEFT", 0, -10)
     
-    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-    scrollFrame:SetScrollChild(scrollChild)
-    scrollChild:SetSize(350, 1000)
-    system.scrollChild = scrollChild
+    local gridContent = CreateFrame("Frame", nil, gridFrame)
+    gridContent:SetSize(320, 800)
+    gridFrame:SetScrollChild(gridContent)
     
-    -- Info panel
+    -- Criar grid de botões 4x8 = 32 pets
+    local buttons = {}
+    for i = 1, 32 do
+        local button = ClickMorphPetZone.CreatePetButton(gridContent, i)
+        local row = math.floor((i - 1) / 4)
+        local col = (i - 1) % 4
+        button:SetPoint("TOPLEFT", gridContent, "TOPLEFT", col * 45, -row * 45)
+        buttons[i] = button
+    end
+    
+    ClickMorphPetZone.petGrid = {
+        frame = gridFrame,
+        content = gridContent,
+        buttons = buttons
+    }
+    
+    -- Botões de ação na parte inferior
+    local actionFrame = CreateFrame("Frame", nil, content)
+    actionFrame:SetSize(340, 40)
+    actionFrame:SetPoint("TOPLEFT", gridFrame, "BOTTOMLEFT", 0, -10)
+    
+    -- Botão Random
+    local randomButton = CreateFrame("Button", nil, actionFrame, "UIPanelButtonTemplate")
+    randomButton:SetSize(80, 25)
+    randomButton:SetPoint("LEFT", actionFrame, "LEFT", 0, 0)
+    randomButton:SetText("Random")
+    randomButton:SetScript("OnClick", function()
+        local pets = ClickMorphPetZone.GetFilteredPets()
+        if #pets > 0 then
+            local randomPet = pets[math.random(#pets)]
+            PetDebugPrint("Random pet morph:", randomPet.name)
+            SendChatMessage(".morph " .. randomPet.displayID, "GUILD")
+        end
+    end)
+    
+    -- Botão Reset
+    local resetButton = CreateFrame("Button", nil, actionFrame, "UIPanelButtonTemplate")
+    resetButton:SetSize(80, 25)
+    resetButton:SetPoint("LEFT", randomButton, "RIGHT", 10, 0)
+    resetButton:SetText("Reset")
+    resetButton:SetScript("OnClick", function()
+        PetDebugPrint("Resetting morph")
+        SendChatMessage(".demorph", "GUILD")
+    end)
+    
+    -- Botão Debug Toggle
+    local debugButton = CreateFrame("Button", nil, actionFrame, "UIPanelButtonTemplate")  
+    debugButton:SetSize(80, 25)
+    debugButton:SetPoint("LEFT", resetButton, "RIGHT", 10, 0)
+    debugButton:SetText("Debug")
+    debugButton:SetScript("OnClick", function()
+        system.debugMode = not system.debugMode
+        local status = system.debugMode and "ON" or "OFF"
+        PetDebugPrint("Debug mode:", status)
+        print("|cff00ccffPetZone Debug:|r", status)
+    end)
+    
+    -- Info panel na parte inferior
     local infoFrame = CreateFrame("Frame", nil, content)
-    infoFrame:SetSize(390, 90)
-    infoFrame:SetPoint("TOPLEFT", scrollFrame, "BOTTOMLEFT", 0, -10)
+    infoFrame:SetSize(340, 60)
+    infoFrame:SetPoint("TOPLEFT", actionFrame, "BOTTOMLEFT", 0, -10)
     
     local infoBg = infoFrame:CreateTexture(nil, "BACKGROUND")
     infoBg:SetAllPoints()
-    infoBg:SetColorTexture(0.1, 0.1, 0.1, 0.5)
+    infoBg:SetColorTexture(0.1, 0.1, 0.1, 0.3)
     
-    -- Selected pet info
-    local selectedIcon = infoFrame:CreateTexture(nil, "ARTWORK")
-    selectedIcon:SetSize(48, 48)
-    selectedIcon:SetPoint("LEFT", 10, 0)
-    selectedIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-    system.selectedIcon = selectedIcon
+    local infoTitle = infoFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    infoTitle:SetPoint("TOPLEFT", 5, -5)
+    infoTitle:SetText("Pet Zone Info:")
     
-    local selectedName = infoFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    selectedName:SetPoint("TOPLEFT", selectedIcon, "TOPRIGHT", 10, 0)
-    selectedName:SetText("No pet selected")
-    system.selectedName = selectedName
+    local infoText = infoFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    infoText:SetPoint("TOPLEFT", infoTitle, "BOTTOMLEFT", 0, -2)
+    infoText:SetWidth(330)
+    infoText:SetJustifyH("LEFT")
+    infoText:SetText("Left-click pets to morph. Use Random for surprise morphs.\nIncludes classic pets, battle pets, and exotic companions.")
     
-    local selectedDesc = infoFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    selectedDesc:SetPoint("TOPLEFT", selectedName, "BOTTOMLEFT", 0, -5)
-    selectedDesc:SetWidth(250)
-    selectedDesc:SetJustifyH("LEFT")
-    system.selectedDesc = selectedDesc
-    
-    -- Buttons
-    local applyBtn = CreateFrame("Button", nil, infoFrame, "UIPanelButtonTemplate")
-    applyBtn:SetSize(70, 25)
-    applyBtn:SetPoint("RIGHT", -10, 10)
-    applyBtn:SetText("Apply")
-    applyBtn:SetScript("OnClick", function()
-        if system.selectedPetData then
-            if system.currentMode == "player" then
-                ClickMorphPetZone.MorphPlayerToPet(system.selectedPetData)
-            else
-                ClickMorphPetZone.MorphPlayerPet(system.selectedPetData)
-            end
-        end
-    end)
-    
-    local resetBtn = CreateFrame("Button", nil, infoFrame, "UIPanelButtonTemplate")
-    resetBtn:SetSize(60, 25)
-    resetBtn:SetPoint("RIGHT", applyBtn, "LEFT", -5, 0)
-    resetBtn:SetText("Reset")
-    resetBtn:SetScript("OnClick", function()
-        ClickMorphPetZone.ResetMorphs()
-        ClickMorphPetZone.ClearSelection()
-    end)
-    
-    -- Status text
-    local statusText = infoFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    statusText:SetPoint("BOTTOM", 0, 5)
-    statusText:SetTextColor(0.8, 0.8, 0.8)
-    system.statusText = statusText
-    
-    system.isActive = true
-    system.contentFrame = content
-    
-    ClickMorphPetZone.UpdateModeButtons()
+    -- Inicializar grid
     ClickMorphPetZone.RefreshPetGrid()
     
-    PetDebugPrint("Pet Zone interface created")
+    PetDebugPrint("PetZone interface created successfully")
+    
     return content
 end
 
--- Refresh grid
-function ClickMorphPetZone.RefreshPetGrid()
+-- Sistema de ativação/desativação
+function ClickMorphPetZone.ToggleSystem()
     local system = ClickMorphPetZone.petSystem
     
-    if not system.scrollChild then return end
-    
-    -- Limpar grid
-    if system.petButtons then
-        for _, btn in pairs(system.petButtons) do
-            btn:Hide()
-            btn:SetParent(nil)
-        end
-    end
-    system.petButtons = {}
-    
-    local pets = ClickMorphPetZone.GetFilteredPets()
-    
-    -- Grid 5 colunas
-    local cols = 5
-    local buttonSize = 64
-    local spacing = 4
-    
-    for i, pet in ipairs(pets) do
-        local row = math.floor((i - 1) / cols)
-        local col = (i - 1) % cols
-        
-        local btn = CreateFrame("Button", nil, system.scrollChild)
-        btn:SetSize(buttonSize, buttonSize)
-        btn:SetPoint("TOPLEFT", col * (buttonSize + spacing) + 5, -(row * (buttonSize + spacing)) - 5)
-        
-        -- Ícone
-        local icon = btn:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(buttonSize - 4, buttonSize - 4)
-        icon:SetPoint("CENTER")
-        icon:SetTexture(pet.icon)
-        
-        -- Border colorida
-        local border = btn:CreateTexture(nil, "OVERLAY")
-        border:SetAllPoints(btn)
-        border:SetTexture("Interface\\Common\\WhiteIconFrame")
-        local r, g, b = unpack(ClickMorphPetZone.GetRarityColor(pet.rarity))
-        border:SetVertexColor(r, g, b, 0.8)
-        
-        -- Highlight
-        local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
-        highlight:SetAllPoints()
-        highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
-        highlight:SetBlendMode("ADD")
-        
-        -- Click handler
-        btn:SetScript("OnClick", function()
-            ClickMorphPetZone.SelectPet(pet, btn)
-        end)
-        
-        -- Tooltip
-        btn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(pet.name, unpack(ClickMorphPetZone.GetRarityColor(pet.rarity)))
-            GameTooltip:AddLine(pet.description, 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Display ID: " .. pet.displayID, 0.6, 0.6, 1)
-            GameTooltip:AddLine("Source: " .. pet.source, 0.8, 0.8, 0.8)
-            GameTooltip:Show()
-        end)
-        
-        btn:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        
-        table.insert(system.petButtons, btn)
-    end
-    
-    PetDebugPrint("Grid refreshed with", #pets, "pets")
-end
-
--- Selecionar pet
-function ClickMorphPetZone.SelectPet(petData, button)
-    local system = ClickMorphPetZone.petSystem
-    
-    if system.selectedButton then
-        system.selectedButton:SetNormalTexture("")
-    end
-    
-    system.selectedPetData = petData
-    system.selectedButton = button
-    
-    -- Visual da seleção
-    local selectedTex = button:CreateTexture(nil, "BACKGROUND")
-    selectedTex:SetAllPoints()
-    selectedTex:SetColorTexture(1, 1, 0, 0.3)
-    button:SetNormalTexture(selectedTex)
-    
-    -- Atualizar info
-    system.selectedIcon:SetTexture(petData.icon)
-    system.selectedName:SetText(petData.name)
-    local r, g, b = unpack(ClickMorphPetZone.GetRarityColor(petData.rarity))
-    system.selectedName:SetTextColor(r, g, b)
-    
-    system.selectedDesc:SetText(petData.description or "")
-    
-    PetDebugPrint("Selected pet:", petData.name)
-end
-
--- Limpar seleção
-function ClickMorphPetZone.ClearSelection()
-    local system = ClickMorphPetZone.petSystem
-    
-    if system.selectedButton then
-        system.selectedButton:SetNormalTexture("")
-    end
-    
-    system.selectedPetData = nil
-    system.selectedButton = nil
-    
-    system.selectedIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-    system.selectedName:SetText("No pet selected")
-    system.selectedName:SetTextColor(1, 1, 1)
-    system.selectedDesc:SetText("")
-end
-
--- Update botões de modo
-function ClickMorphPetZone.UpdateModeButtons()
-    local system = ClickMorphPetZone.petSystem
-    
-    if system.playerModeBtn and system.petModeBtn then
-        if system.currentMode == "player" then
-            system.playerModeBtn:SetNormalFontObject("GameFontHighlight")
-            system.petModeBtn:SetNormalFontObject("GameFontNormal")
-        else
-            system.playerModeBtn:SetNormalFontObject("GameFontNormal")
-            system.petModeBtn:SetNormalFontObject("GameFontHighlight")
-        end
-    end
-    
-    -- Update status
-    if system.statusText then
-        local canHavePet, hasPet = ClickMorphPetZone.CanHavePets()
-        
-        if system.currentMode == "player" then
-            system.statusText:SetText("Mode: Transform player into pet creature")
-            system.statusText:SetTextColor(0.8, 1, 0.8)
-        else
-            if canHavePet and hasPet then
-                system.statusText:SetText("Mode: Transform your pet")
-                system.statusText:SetTextColor(0.8, 0.8, 1)
-            else
-                system.statusText:SetText("Mode: Pet transform (Need active pet)")
-                system.statusText:SetTextColor(1, 0.8, 0.8)
-            end
-        end
+    if system.isActive then
+        ClickMorphPetZone.DisableSystem()
+    else
+        ClickMorphPetZone.EnableSystem()
     end
 end
 
--- Status do sistema
-function ClickMorphPetZone.ShowStatus()
+function ClickMorphPetZone.EnableSystem()
     local system = ClickMorphPetZone.petSystem
     
-    print("|cff00ff00=== PET ZONE STATUS ===|r")
-    print("Active:", system.isActive and "YES" or "NO")
-    print("Current Mode:", system.currentMode)
-    print("Selected Category:", system.selectedCategory)
-    print("Search Text:", system.searchText ~= "" and system.searchText or "None")
-    print("Use API Data:", system.useAPIData and "YES" or "NO")
-    
-    local canHavePet, hasPet = ClickMorphPetZone.CanHavePets()
-    local playerClass = select(2, UnitClass("player"))
-    print("Player Class:", playerClass)
-    print("Can Have Pet:", canHavePet and "YES" or "NO")
-    print("Has Active Pet:", hasPet and "YES" or "NO")
-    
-    local totalPets = 0
-    for _, cat in ipairs(ClickMorphPetZone.PET_DATABASE) do
-        totalPets = totalPets + #cat.pets
+    if not system.isActive then
+        system.isActive = true
+        PetDebugPrint("PetZone system enabled")
+        return true
     end
-    print("Total Hardcoded Pets:", totalPets)
-    
-    if system.selectedPetData then
-        print("Selected Pet:", system.selectedPetData.name)
-    end
+    return false
 end
 
--- Comandos para testes
-SLASH_CLICKMORPH_PET1 = "/cmpet"
-SlashCmdList.CLICKMORPH_PET = function(arg)
-    local args = {}
-    for word in arg:gmatch("%S+") do
-        table.insert(args, word)
+function ClickMorphPetZone.DisableSystem()
+    local system = ClickMorphPetZone.petSystem
+    
+    if system.isActive then
+        system.isActive = false
+        PetDebugPrint("PetZone system disabled")
+        return true
     end
+    return false
+end
+
+-- Comandos do PetZone
+SLASH_CLICKMORPH_PETZONE1 = "/cmpets"
+SlashCmdList.CLICKMORPH_PETZONE = function(arg)
+    local command = string.lower(arg or "")
     
-    local command = string.lower(args[1] or "")
-    
-    if command == "reset" then
-        ClickMorphPetZone.ResetMorphs()
-    elseif command == "mode" then
-        local mode = args[2]
-        if mode == "player" then
-            ClickMorphPetZone.petSystem.currentMode = "player"
-            ClickMorphPetZone.UpdateModeButtons()
-            print("|cff00ff00Pet Zone:|r Mode set to player")
-        elseif mode == "pet" then
-            ClickMorphPetZone.petSystem.currentMode = "playerpet"
-            ClickMorphPetZone.UpdateModeButtons()
-            print("|cff00ff00Pet Zone:|r Mode set to pet")
-        else
-            print("|cffff0000Pet Zone:|r Usage: /cmpet mode <player|pet>")
-        end
-    elseif command == "status" then
-        ClickMorphPetZone.ShowStatus()
+    if command == "toggle" or command == "" then
+        ClickMorphPetZone.ToggleSystem()
+        local status = ClickMorphPetZone.petSystem.isActive and "enabled" or "disabled"
+        print("|cff00ccffPetZone:|r System " .. status)
     elseif command == "debug" then
         ClickMorphPetZone.petSystem.debugMode = not ClickMorphPetZone.petSystem.debugMode
-        print("|cff00ff00Pet Zone:|r Debug mode", ClickMorphPetZone.petSystem.debugMode and "ON" or "OFF")
-    
-    -- ============================================================================
-    -- COMANDOS DE TESTE (descomente para usar)
-    -- ============================================================================
-    --[[
-    elseif command == "testapi" then
+        local status = ClickMorphPetZone.petSystem.debugMode and "ON" or "OFF"
+        print("|cff00ccffPetZone:|r Debug mode " .. status)
+    elseif command == "api" then
         ClickMorphPetZone.petSystem.useAPIData = not ClickMorphPetZone.petSystem.useAPIData
-        print("|cff00ff00Pet Zone:|r API Test mode", ClickMorphPetZone.petSystem.useAPIData and "ON" or "OFF")
-        if ClickMorphPetZone.petSystem.contentFrame then
-            ClickMorphPetZone.RefreshPetGrid()
+        local status = ClickMorphPetZone.petSystem.useAPIData and "ON" or "OFF"
+        print("|cff00ccffPetZone:|r API mode " .. status)
+        ClickMorphPetZone.RefreshPetGrid()
+    elseif command == "status" then
+        local system = ClickMorphPetZone.petSystem
+        print("|cff00ccff=== PETZONE STATUS ===|r")
+        print("Active:", system.isActive and "YES" or "NO")
+        print("Debug Mode:", system.debugMode and "ON" or "OFF")
+        print("API Mode:", system.useAPIData and "ON" or "OFF")
+        print("Selected Category:", system.selectedCategory)
+        print("Search Text:", system.searchText ~= "" and system.searchText or "None")
+        
+        local pets = ClickMorphPetZone.GetFilteredPets()
+        print("Filtered Pets:", #pets)
+    elseif command == "random" then
+        local pets = ClickMorphPetZone.GetFilteredPets()
+        if #pets > 0 then
+            local randomPet = pets[math.random(#pets)]
+            print("|cff00ccffPetZone:|r Random morph: " .. randomPet.name)
+            SendChatMessage(".morph " .. randomPet.displayID, "GUILD")
+        else
+            print("|cff00ccffPetZone:|r No pets available for random morph")
         end
-    elseif command == "testjournal" then
-        local pets = ClickMorphPetZone.TestPetJournalAPI()
-        print("|cff00ff00Pet Zone:|r Found", #pets, "pets in journal")
-    elseif command == "testmounts" then
-        local mounts = ClickMorphPetZone.TestMountJournalAPI()
-        print("|cff00ff00Pet Zone:|r Found", #mounts, "mount pets")
-    elseif command == "testids" then
-        local startID = tonumber(args[2]) or 1000
-        local endID = tonumber(args[3]) or 1050
-        print("|cff00ff00Pet Zone:|r Testing Display IDs", startID, "to", endID)
-        ClickMorphPetZone.TestDisplayIDRange(startID, endID)
-    elseif command == "testmodel" then
-        local displayID = tonumber(args[2]) or 892
-        ClickMorphPetZone.TestModelValidation(displayID)
-    --]]
-    
     else
-        print("|cff00ff00Pet Zone Commands:|r")
-        print("/cmpet reset - Reset all morphs")
-        print("/cmpet mode <player|pet> - Set morph mode")
-        print("/cmpet status - Show system status")
-        print("/cmpet debug - Toggle debug mode")
-        
-        -- COMANDOS DE TESTE (descomente as linhas abaixo para mostrar)
-        --print("/cmpet testapi - Toggle API test mode")
-        --print("/cmpet testjournal - Test Pet Journal API")
-        --print("/cmpet testmounts - Test Mount Journal API")
-        --print("/cmpet testids <start> <end> - Test Display ID range")
-        --print("/cmpet testmodel <displayID> - Test model validation")
-        
-        print("")
-        print("Open Collections Journal -> iMorph tab -> Pet Zone for the full interface!")
+        print("|cff00ccffPetZone Commands:|r")
+        print("/cmpets toggle - Toggle PetZone system")
+        print("/cmpets debug - Toggle debug mode")
+        print("/cmpets api - Toggle API data usage")
+        print("/cmpets status - Show system status")
+        print("/cmpets random - Apply random pet morph")
     end
 end
 
-print("|cff00ff00ClickMorph Pet Zone|r loaded!")
-print("|cff00ff00Pet Zone:|r Uncomment API test sections in PetZone.lua to enable experimental features")
-print("|cff00ff00Pet Zone:|r Use /cmpet for commands or open the iMorph tab")
+-- Inicialização
+local function Initialize()
+    PetDebugPrint("Initializing PetZone system...")
+    
+    -- Registrar eventos se necessário
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("ADDON_LOADED")
+    frame:SetScript("OnEvent", function(self, event, addonName)
+        if event == "ADDON_LOADED" and addonName == "ClickMorph" then
+            PetDebugPrint("ClickMorph loaded, PetZone ready")
+        end
+    end)
+end
+
+Initialize()
+
+PetDebugPrint("PetZone.lua loaded successfully")
+print("|cff00ccffClickMorph PetZone|r loaded!")
+print("Use |cffffcc00/cmpets|r to access pet morph commands")

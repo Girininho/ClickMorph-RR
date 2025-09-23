@@ -102,7 +102,7 @@ function f:InitWardrobe()
 		active = true
 
 		ItemsCollection = WardrobeCollectionFrame.ItemsCollectionFrame
-		IsWardRobeSortLoaded = IsAddOnLoaded("WardRobeSort")
+		C_AddOns.IsAddOnLoaded("WardRobeSort")
 
 		-- item sets
 		--WardrobeCollectionFrame.SetsCollectionFrame.Model:HookScript("OnMouseUp", CM.MorphTransmogSet)

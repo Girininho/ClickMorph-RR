@@ -1,9 +1,46 @@
--- VERSÃO FINAL - LIMPA E FUNCIONAL
+-- VERSÃO FINAL - LIMPA E FUNCIONAL COM BLOQUEIO DE TRACKING
 ClickMorph = {}
 CM = ClickMorph
 CM.isRetail = (WOW_PROJECT_ID == WOW_PROJECT_MAINLINE)
 CM.project = CM.isRetail and "Live" or "Classic"
 local FileData
+
+-- FIX: Compatibility para versões novas do WoW
+if not IsAddOnLoaded then
+    IsAddOnLoaded = C_AddOns.IsAddOnLoaded
+end
+
+-- Sistema de bloqueio de Content Tracking
+CM.trackingBlocked = false
+CM.originalStartTracking = nil
+CM.originalStopTracking = nil
+
+function CM:SetupContentTrackingBlock()
+    if not C_ContentTracking then return end
+    if not self.originalStartTracking then
+        self.originalStartTracking = C_ContentTracking.StartTracking
+        self.originalStopTracking = C_ContentTracking.StopTracking
+        C_ContentTracking.StartTracking = function(...) 
+            if CM.trackingBlocked then return false end 
+            return CM.originalStartTracking(...) 
+        end
+        C_ContentTracking.StopTracking = function(...) 
+            if CM.trackingBlocked then return false end 
+            return CM.originalStopTracking(...) 
+        end
+    end
+end
+
+function CM:SetTrackingBlock(enable)
+    self.trackingBlocked = enable
+    if enable then 
+        C_Timer.After(2, function() 
+            if CM.trackingBlocked then 
+                CM.trackingBlocked = false 
+            end 
+        end) 
+    end
+end
 
 -- inventory type -> equipment slot -> slot name
 CM.SlotNames = {
@@ -218,6 +255,9 @@ function CM:MorphItem(unit, item, silent)
 			return -- Sai silenciosamente se não conseguir processar o item
 		end
 		
+		-- Ativar bloqueio de tracking
+		self:SetTrackingBlock(true)
+		
 		local slotID = InvTypeToSlot[equipLoc]
 		if slotID then
 			slotID = CM:GetDualWieldSlot(slotID)
@@ -226,10 +266,15 @@ function CM:MorphItem(unit, item, silent)
 				CM:PrintChat(format("%s -> %d %s", CM.SlotNames[slotID], itemID, itemLink))
 			end
 		end
+		
+		-- Desativar bloqueio após morph
+		C_Timer.After(0.3, function()
+			self:SetTrackingBlock(false)
+		end)
 	end
 end
 
--- Hook para bags (Alt+Shift+Click)
+-- Hook para bags (Alt+Shift+Click e Shift+Click)
 hooksecurefunc("HandleModifiedItemClick", function(item)
 	if IsShiftKeyDown() then
 		CM:MorphItem("player", item)
@@ -290,15 +335,20 @@ end
 function CM.MorphTransmogSet()
 	local morph = CM:CanMorph()
 	if morph and morph.item then
+		-- Ativar bloqueio de tracking
+		CM:SetTrackingBlock(true)
+		
 		local setID = WardrobeCollectionFrame.SetsCollectionFrame.selectedSetID
 		if not setID then
 			CM:PrintChat("No set selected", 1, 1, 0)
+			CM:SetTrackingBlock(false)
 			return
 		end
 		
 		local setInfo = C_TransmogSets.GetSetInfo(setID)
 		if not setInfo then
 			CM:PrintChat("Could not get set info", 1, 1, 0)
+			CM:SetTrackingBlock(false)
 			return
 		end
 
@@ -341,11 +391,19 @@ function CM.MorphTransmogSet()
 		else
 			CM:PrintChat("Could not get set sources", 1, 1, 0)
 		end
+		
+		-- Desativar bloqueio após operação
+		C_Timer.After(0.3, function()
+			CM:SetTrackingBlock(false)
+		end)
 	end
 end
 
 -- Individual transmog items with variant detection
 function CM.MorphTransmogItem(frame)
+	-- Ativar bloqueio de tracking
+	CM:SetTrackingBlock(true)
+	
 	local loc = WardrobeCollectionFrame.ItemsCollectionFrame.transmogLocation
 	local visualID = frame.visualInfo.visualID
 
@@ -404,6 +462,11 @@ function CM.MorphTransmogItem(frame)
 			CM:PrintChat("Unsupported enchant slot: " .. tostring(loc.slotID))
 		end
 	end
+	
+	-- Desativar bloqueio após operação
+	C_Timer.After(0.3, function()
+		CM:SetTrackingBlock(false)
+	end)
 end
 
 -- Hooks initialization - com prevenção de hooks duplos
@@ -413,6 +476,10 @@ local function InitializeHooks()
 		return -- Previne hooks duplos
 	end
 	hooksInitialized = true
+	
+	-- Inicializar sistema de bloqueio de content tracking
+	CM:SetupContentTrackingBlock()
+	
 	-- Mount Journal hooks (Alt+Shift) - com verificação robusta para WoW 11.x
 	if MountJournal then
 		local mountHooksSuccess = true
@@ -498,7 +565,8 @@ local function InitializeHooks()
 		CM:PrintChat("Wardrobe Items hooks initialized (Alt+Shift)")
 	end
 	
-	CM:PrintChat("All hooks standardized to Alt+Shift+Click")
+	CM:PrintChat("All hooks standardized to Alt+Shift+Click and Shift+Click")
+	CM:PrintChat("Content tracking blocked during morph operations")
 end
 
 -- Debug system
@@ -527,6 +595,7 @@ function CM:Debug()
 	local morpher = self:CanMorph(true)
 	if morpher then
 		self:PrintChat("[OK] Ready to morph!")
+		self:PrintChat("Content tracking blocker: " .. (self.trackingBlocked and "ACTIVE" or "INACTIVE"))
 	else
 		self:PrintChat("[FAIL] No morpher found - load iMorph first")
 	end
@@ -547,7 +616,7 @@ local mainFrame = CreateFrame("Frame")
 mainFrame:RegisterEvent("ADDON_LOADED")
 mainFrame:SetScript("OnEvent", function(self, event, addonName)
 	if addonName == "ClickMorph" then
-		CM:PrintChat("Loaded! All functions use Alt+Shift+Click. Use /cmdebug to check status.")
+		CM:PrintChat("Loaded! All functions use Alt+Shift+Click and Shift+Click. Content tracking blocked.")
 	elseif addonName == "Blizzard_Collections" then
 		if not hooksInitialized then
 			C_Timer.After(0.5, InitializeHooks)
