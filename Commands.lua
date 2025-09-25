@@ -1,152 +1,292 @@
--- ClickMorph Command System - Retail Remaster
--- Sistema de comandos integrado com UI nativa do WoW
+-- ClickMorph Command System - UNIFIED VERSION
+-- Sistema de comandos ÚNICO e centralizado para eliminar conflitos
 
-ClickMorphCommands = {} -- Global
-
--- ========================================
--- PATCH PARA COMMANDS.LUA
--- Adicione estas linhas no INÍCIO do Commands.lua para desabilitar o botão antigo
--- ========================================
-
--- IMPORTANTE: Prevenir criação do botão antigo
-local magicResetButton = nil -- Declarar como local para evitar global
-
--- Sobrescrever a função antiga de criação do botão
-local function CreateMagicResetButton()
-    -- NÃO fazer nada - o novo MagiButton.lua cuida disso
-    if ClickMorphMagiButton and ClickMorphMagiButton.API then
-        print("|cffccccccRedirecting to new MagiButton system...|r")
-        ClickMorphMagiButton.API.Show()
-    else
-        print("|cffff6666Old Magic Reset Button disabled - use /cmbutton show|r")
-    end
-end
-
--- Sobrescrever a função antiga de esconder o botão  
-local function HideMagicResetButton()
-    -- NÃO fazer nada - o novo MagiButton.lua cuida disso
-    if ClickMorphMagiButton and ClickMorphMagiButton.API then
-        ClickMorphMagiButton.API.Hide()
-    else
-        print("|cffff6666Old Magic Reset Button disabled - use /cmbutton hide|r")
-    end
-end
-
--- Prevenir que as funções antigas sejam chamadas
-if ClickMorphCommands then
-    ClickMorphCommands.CreateMagicResetButton = CreateMagicResetButton
-    ClickMorphCommands.HideMagicResetButton = HideMagicResetButton
-end
+ClickMorphCommands = ClickMorphCommands or {} -- Global
 
 -- ========================================
--- RESTO DO COMMANDS.LUA ORIGINAL CONTINUA AQUI...
--- Apenas REMOVA as funções CreateMagicResetButton() e HideMagicResetButton() 
--- do Commands.lua original e substitua por este patch
+-- CONFIGURAÇÃO CENTRALIZADA
 -- ========================================
-
-
--- Configurações do addon
 ClickMorphCommands.config = {
     enableSounds = true,
-    showWarnings = true,
-    autoClose = false, -- Mudei para false para melhor UX
     silentMode = false,
-    magicReset = false,
-    compactMode = false, -- Nova opção
-    windowWidth = 420,   -- Tamanho da janela
-    windowHeight = 380
+    magicReset = true,
+    enableShowAll = false,
+    enableWardrobe = false,
+    debugMode = false
 }
-
--- Informações do sistema
-ClickMorphCommands.systemInfo = {
-    build = "Retail Remaster",
-    iMorphDetected = false,
-    apiStatus = "Unknown"
-}
-
--- Carregar configurações
-local function LoadConfig()
-    if ClickMorphDB and ClickMorphDB.commands then
-        for key, value in pairs(ClickMorphDB.commands) do
-            ClickMorphCommands.config[key] = value
-        end
-    end
-end
 
 -- Salvar configurações
 local function SaveConfig()
-    if not ClickMorphDB then
-        ClickMorphDB = {}
-    end
+    ClickMorphDB = ClickMorphDB or {}
     ClickMorphDB.commands = ClickMorphCommands.config
+    if ClickMorphCommands.config.debugMode then
+        print("|cffccccccClickMorph:|r Config saved")
+    end
 end
 
--- Verificar status do sistema
-local function CheckSystemStatus()
-    -- Verificar iMorph
-    if GetClickMorph and GetClickMorph() then
-        ClickMorphCommands.systemInfo.iMorphDetected = true
-        ClickMorphCommands.systemInfo.apiStatus = "Active"
-    elseif IMorphInfo then
-        ClickMorphCommands.systemInfo.iMorphDetected = true
-        ClickMorphCommands.systemInfo.apiStatus = "Ready"
+-- Carregar configurações
+local function LoadConfig()
+-- Garantir que as configurações do MagiButton existem
+    if ClickMorphCommands.config.magiButtonEnabled == nil then
+        ClickMorphCommands.config.magiButtonEnabled = false
+    end
+    
+    if ClickMorphCommands.config.magiButtonSounds == nil then
+        ClickMorphCommands.config.magiButtonSounds = true
+    end
+    
+    -- Sincronizar com MagiButton se disponível
+    if ClickMorphMagiButton then
+        -- Aplicar configurações carregadas
+        if ClickMorphCommands.config.magiButtonEnabled then
+            C_Timer.After(1.5, function()
+                if ClickMorphMagiButton.API then
+                    ClickMorphMagiButton.API.Show()
+                end
+            end)
+        end
+        
+        -- Sincronizar sons
+        if ClickMorphMagiButton.config then
+            ClickMorphMagiButton.config.enableSounds = ClickMorphCommands.config.magiButtonSounds
+        end
+    end
+
+    if ClickMorphDB and ClickMorphDB.commands then
+        for k, v in pairs(ClickMorphDB.commands) do
+            ClickMorphCommands.config[k] = v
+        end
+    end
+    if ClickMorphCommands.config.debugMode then
+        print("|cffccccccClickMorph:|r Config loaded")
+    end
+end
+
+-- ========================================
+-- COMANDO UNIFICADO /CM - VERSÃO ÚNICA
+-- ========================================
+local function UnifiedClickMorphHandler(msg)
+    local args = {strsplit(" ", msg)}
+    local command = string.lower(args[1] or "")
+    
+    -- Comando principal - abrir menu
+    if command == "" or command == "menu" then
+        ClickMorphCommands.CreateCommandFrame()
+        if ClickMorphCommands.config.enableSounds then
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPEN)
+        end
+        return
+        
+    -- Reset morph
+    elseif command == "reset" then
+        ClickMorphCommands.ExecuteReset()
+        return
+        
+    -- ShowAll - chamar o sistema do ShowAll.lua
+    elseif command == "showall" then
+        if ClickMorphShowAll and ClickMorphShowAll.ShowConfirmation then
+            ClickMorphShowAll.ShowConfirmation()
+        else
+            print("|cffff0000ClickMorph:|r ShowAll system not loaded!")
+        end
+        return
+        
+    -- Debug
+    elseif command == "debug" then
+        ClickMorphCommands.ShowDebugInfo()
+        return
+        
+    -- Settings
+    elseif command == "settings" then
+        ClickMorphCommands.ShowSettings()
+        return
+        
+    -- MagiButton control
+    elseif command == "button" then
+        local subCommand = string.lower(args[2] or "")
+        if ClickMorphMagiButton and ClickMorphMagiButton.API then
+            if subCommand == "show" then
+                ClickMorphMagiButton.API.Show()
+            elseif subCommand == "hide" then
+                ClickMorphMagiButton.API.Hide()
+            elseif subCommand == "toggle" then
+                ClickMorphMagiButton.API.Toggle()
+            else
+                print("|cffffcc00MagiButton:|r /cm button show/hide/toggle")
+            end
+        else
+            print("|cffff0000ClickMorph:|r MagiButton not loaded!")
+        end
+        return
+        
+    -- Help
+    elseif command == "help" then
+        print("|cff00ff00=== ClickMorph Retail Remaster ===|r")
+        print("|cffffcc00/cm|r - Open main menu interface")
+        print("|cffffcc00/cm reset|r - Reset all morphs")
+        print("|cffffcc00/cm showall|r - Unlock all transmog/mounts")
+        print("|cffffcc00/cm settings|r - Open settings panel")
+        print("|cffffcc00/cm button show/hide|r - Control MagiButton")
+        print("|cffffcc00/cm debug|r - Show system information")
+        return
+        
     else
-        ClickMorphCommands.systemInfo.iMorphDetected = false
-        ClickMorphCommands.systemInfo.apiStatus = "Not Found"
+        print("|cffff0000ClickMorph:|r Unknown command '/" .. tostring(command) .. "'")
+        print("Use |cffffcc00/cm help|r for available commands")
+        return
     end
 end
 
--- Frame principal do menu
-local commandFrame = nil
-
-local function CreateCommandFrame()
-    if commandFrame then 
-        commandFrame:Show()
-        return commandFrame 
+-- ========================================
+-- INTERFACE DO MENU PRINCIPAL
+-- ========================================
+function ClickMorphCommands.CreateCommandFrame()
+    -- Se já existe, apenas mostrar
+    if ClickMorphCommands.commandFrame then
+        ClickMorphCommands.commandFrame:Show()
+        return ClickMorphCommands.commandFrame
     end
     
-    CheckSystemStatus() -- Atualizar status
-    
-    commandFrame = CreateFrame("Frame", "ClickMorphCommandFrame", UIParent, "PortraitFrameTemplate")
-    commandFrame:SetSize(ClickMorphCommands.config.windowWidth, ClickMorphCommands.config.windowHeight)
-    commandFrame:SetPoint("CENTER", UIParent, "CENTER")
+    -- Criar frame principal
+    local commandFrame = CreateFrame("Frame", "ClickMorphCommandFrame", UIParent, "BasicFrameTemplateWithInset")
+    commandFrame:SetSize(400, 500)
+    commandFrame:SetPoint("CENTER")
     commandFrame:SetMovable(true)
-    commandFrame:SetResizable(true)
     commandFrame:EnableMouse(true)
     commandFrame:RegisterForDrag("LeftButton")
     commandFrame:SetScript("OnDragStart", commandFrame.StartMoving)
-    commandFrame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        -- Salvar tamanho quando parar de redimensionar
-        ClickMorphCommands.config.windowWidth = self:GetWidth()
-        ClickMorphCommands.config.windowHeight = self:GetHeight()
-        SaveConfig()
-    end)
+    commandFrame:SetScript("OnDragStop", commandFrame.StopMovingOrSizing)
+    commandFrame:SetClampedToScreen(true)
+    commandFrame:SetFrameStrata("HIGH")
     
-    -- Adicionar resize grip
-    local resizeGrip = CreateFrame("Button", nil, commandFrame)
-    resizeGrip:SetSize(20, 20)
-    resizeGrip:SetPoint("BOTTOMRIGHT", commandFrame, "BOTTOMRIGHT", -5, 5)
-    resizeGrip:EnableMouse(true)
-    resizeGrip:RegisterForDrag("LeftButton")
-    resizeGrip:SetScript("OnDragStart", function()
-        commandFrame:StartSizing("BOTTOMRIGHT")
-    end)
-    resizeGrip:SetScript("OnDragStop", function()
-        commandFrame:StopMovingOrSizing()
-        -- Salvar novo tamanho
-        ClickMorphCommands.config.windowWidth = commandFrame:GetWidth()
-        ClickMorphCommands.config.windowHeight = commandFrame:GetHeight()
-        SaveConfig()
-    end)
+    commandFrame.title = commandFrame:CreateFontString(nil, "OVERLAY")
+    commandFrame.title:SetFontObject("GameFontHighlightLarge")
+    commandFrame.title:SetPoint("LEFT", commandFrame.TitleBg, "LEFT", 5, 0)
+    commandFrame.title:SetText("ClickMorph Retail Remaster")
     
-    -- Textura visual do resize grip
-    local resizeTexture = resizeGrip:CreateTexture(nil, "ARTWORK")
-    resizeTexture:SetAllPoints()
-    resizeTexture:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    -- ScrollFrame para conteúdo
+    local scrollFrame = CreateFrame("ScrollFrame", nil, commandFrame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", commandFrame.Inset, "TOPLEFT", 4, -4)
+    scrollFrame:SetPoint("BOTTOMRIGHT", commandFrame.Inset, "BOTTOMRIGHT", -3, 4)
     
-    commandFrame:SetTitle("ClickMorph Retail Remaster")
-    commandFrame.PortraitContainer.portrait:SetTexture("Interface\\Icons\\INV_Misc_Enggizmos_SwissArmy")
+    local contentFrame = CreateFrame("Frame")
+    contentFrame:SetSize(370, 800) -- Altura maior para scroll
+    scrollFrame:SetScrollChild(contentFrame)
+    
+    local yOffset = -20
+    
+    -- Função helper para criar botões
+    local function CreateMenuButton(parent, yPos, text, tooltip, onClick)
+        local button = CreateFrame("Button", nil, parent, "GameMenuButtonTemplate")
+        button:SetPoint("TOPLEFT", parent, "TOPLEFT", 20, yPos)
+        button:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -20, yPos)
+        button:SetHeight(32)
+        button:SetText(text)
+        button:SetNormalFontObject("GameFontNormalLarge")
+        button:SetScript("OnClick", onClick)
+        
+        if tooltip then
+            button:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(tooltip)
+                GameTooltip:Show()
+            end)
+            button:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+        end
+        
+        return button
+    end
+    
+    -- BOTÕES DO MENU
+    
+    -- Reset Button
+    CreateMenuButton(contentFrame, yOffset, "🔄 Reset Appearance", 
+        "Reset all morphs and return to your original appearance", 
+        function()
+            ClickMorphCommands.ExecuteReset()
+            if ClickMorphCommands.config.enableSounds then
+                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            end
+        end)
+    yOffset = yOffset - 45
+    
+    -- ShowAll Button
+    CreateMenuButton(contentFrame, yOffset, "🎭 ShowAll System",
+        "Unlock ALL transmog appearances and mounts in the game\n|cffff6666Warning: May cause temporary lag|r",
+        function()
+            if ClickMorphShowAll and ClickMorphShowAll.ShowConfirmation then
+                ClickMorphShowAll.ShowConfirmation()
+                commandFrame:Hide()
+            else
+                print("|cffff0000ClickMorph:|r ShowAll system not loaded!")
+            end
+            if ClickMorphCommands.config.enableSounds then
+                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            end
+        end)
+    yOffset = yOffset - 45
+    
+    -- MagiButton Control
+    CreateMenuButton(contentFrame, yOffset, "🔮 MagiButton Control",
+        "Show/Hide the magical reset button\nLeft-click: Remove/reapply morph\nRight-click: Open menu\nAlt+click: Full reset",
+        function()
+            if ClickMorphMagiButton and ClickMorphMagiButton.API then
+                ClickMorphMagiButton.API.Toggle()
+                print("|cff00ff00ClickMorph:|r MagiButton toggled!")
+            else
+                print("|cffff0000ClickMorph:|r MagiButton system not loaded!")
+            end
+            if ClickMorphCommands.config.enableSounds then
+                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            end
+        end)
+    yOffset = yOffset - 45
+    
+    -- Settings Button
+    CreateMenuButton(contentFrame, yOffset, "⚙️ Settings",
+        "Configure addon behavior and preferences",
+        function()
+            ClickMorphCommands.ShowSettings()
+            commandFrame:Hide()
+            if ClickMorphCommands.config.enableSounds then
+                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            end
+        end)
+    yOffset = yOffset - 45
+    
+    -- Debug Button
+    CreateMenuButton(contentFrame, yOffset, "🔍 System Debug",
+        "Check system status and troubleshoot issues",
+        function()
+            ClickMorphCommands.ShowDebugInfo()
+            if ClickMorphCommands.config.enableSounds then
+                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            end
+        end)
+    yOffset = yOffset - 65
+    
+    -- Seção de Status
+    local statusHeader = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    statusHeader:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 30, yOffset)
+    statusHeader:SetText("System Status")
+    statusHeader:SetTextColor(1, 0.8, 0)
+    yOffset = yOffset - 25
+    
+    -- Status do ShowAll
+    local showAllStatus = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    showAllStatus:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 40, yOffset)
+    local showAllActive = ClickMorphShowAll and ClickMorphShowAll.unlockSystem.isActive
+    showAllStatus:SetText("ShowAll System: " .. (showAllActive and "|cff00ff00ACTIVE|r" or "|cffccccccINACTIVE|r"))
+    yOffset = yOffset - 20
+    
+    -- Status do MagiButton
+    local magiStatus = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    magiStatus:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 40, yOffset)
+    local magiLoaded = ClickMorphMagiButton and ClickMorphMagiButton.API
+    magiStatus:SetText("MagiButton: " .. (magiLoaded and "|cff00ff00LOADED|r" or "|cffff6666NOT LOADED|r"))
+    yOffset = yOffset - 20
     
     commandFrame.CloseButton:SetScript("OnClick", function()
         commandFrame:Hide()
@@ -155,170 +295,16 @@ local function CreateCommandFrame()
         end
     end)
     
-    local scrollFrame = CreateFrame("ScrollFrame", nil, commandFrame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", commandFrame, "TOPLEFT", 20, -70)
-    scrollFrame:SetPoint("BOTTOMRIGHT", commandFrame, "BOTTOMRIGHT", -40, 40)
-    
-    local contentFrame = CreateFrame("Frame", nil, scrollFrame)
-    scrollFrame:SetScrollChild(contentFrame)
-    
-    -- Função para atualizar tamanho do conteúdo baseado na janela
-    local function UpdateContentSize()
-        local width = scrollFrame:GetWidth() - 20
-        contentFrame:SetSize(width, 600)
-    end
-    
-    -- Atualizar quando a janela for redimensionada
-    commandFrame:SetScript("OnSizeChanged", UpdateContentSize)
-    UpdateContentSize() -- Chamar uma vez para configurar inicial
-    
-    local yOffset = -10
-    
-    -- Status do Sistema
-    local statusHeader = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    statusHeader:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, yOffset)
-    statusHeader:SetText("System Status")
-    statusHeader:SetTextColor(1, 0.8, 0)
-    yOffset = yOffset - 25
-    
-    local statusText = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    statusText:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 10, yOffset)
-    local statusColor = ClickMorphCommands.systemInfo.iMorphDetected and "|cff00ff00" or "|cffff0000"
-    statusText:SetText(statusColor .. "iMorph: " .. ClickMorphCommands.systemInfo.apiStatus .. "|r")
-    yOffset = yOffset - 20
-    
-    local buildText = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    buildText:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 10, yOffset)
-    buildText:SetText("|cff888888FlyHigh old ClickMorph|r")
-    yOffset = yOffset - 30
-    
-    -- Seção Principal
-    local mainHeader = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    mainHeader:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, yOffset)
-    mainHeader:SetText("Main Functions")
-    mainHeader:SetTextColor(1, 0.8, 0)
-    yOffset = yOffset - 30
-    
-    -- Função auxiliar para criar botões responsivos
-    local function CreateResponsiveButton(parent, yPos, text, tooltip, onClick)
-        local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-        btn:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, yPos)
-        btn:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, yPos)
-        btn:SetHeight(35)
-        btn:SetText(text)
-        btn.tooltipText = tooltip
-        btn:SetScript("OnClick", onClick)
-        btn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(text, 1, 1, 1)
-            GameTooltip:AddLine(self.tooltipText, 0.8, 0.8, 0.8, true)
-            GameTooltip:Show()
-        end)
-        btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        return btn
-    end
-    
-    -- Botão Show All
-    CreateResponsiveButton(contentFrame, yOffset, "Unlock All Wardrobe & Mounts", 
-        "Loads ALL transmog appearances and mounts\n|cffff8800Warning:|r May cause temporary lag",
-        function()
-            if ClickMorphCommands.config.enableSounds then
-                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            end
-            if ClickMorphShowAll and ClickMorphShowAll.ShowConfirmation then
-                ClickMorphShowAll.ShowConfirmation()
-                if ClickMorphCommands.config.autoClose then
-                    commandFrame:Hide()
-                end
-            else
-                print("|cffff0000ClickMorph:|r ShowAll system not loaded!")
-            end
-        end)
-    yOffset = yOffset - 45
-    
-    -- Botão Reset
-    CreateResponsiveButton(contentFrame, yOffset, "Reset All Appearance",
-        "Resets your current transmog to original gear\nWorks with iMorph integration",
-        function()
-            if ClickMorphCommands.config.enableSounds then
-                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            end
-            ClickMorphCommands.ExecuteReset()
-            if ClickMorphCommands.config.autoClose then
-                commandFrame:Hide()
-            end
-        end)
-    yOffset = yOffset - 45
-    
-    -- Botão Revert APIs
-    CreateResponsiveButton(contentFrame, yOffset, "Restore Original APIs",
-        "Reverts ShowAll changes back to Blizzard defaults\nUse if experiencing issues",
-        function()
-            if ClickMorphCommands.config.enableSounds then
-                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            end
-            if ClickMorphShowAll and ClickMorphShowAll.RevertAPIs then
-                ClickMorphShowAll.RevertAPIs()
-                print("|cff00ff00ClickMorph:|r APIs restored to original state")
-            else
-                print("|cffff0000ClickMorph:|r ShowAll system not loaded!")
-            end
-            if ClickMorphCommands.config.autoClose then
-                commandFrame:Hide()
-            end
-        end)
-    yOffset = yOffset - 55
-    
-    -- Seção de Ferramentas
-    local toolsHeader = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    toolsHeader:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, yOffset)
-    toolsHeader:SetText("Tools & Features")
-    toolsHeader:SetTextColor(1, 0.8, 0)
-    yOffset = yOffset - 30
-    
-    -- Botão SaveHub
-    CreateResponsiveButton(contentFrame, yOffset, "SaveHub - Morph Presets",
-        "Save and load your favorite transmog combinations\nQuick access to morph presets",
-        function()
-            if ClickMorphCommands.config.enableSounds then
-                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            end
-            if ClickMorphSaveHub and ClickMorphSaveHub.ShowMenu then
-                ClickMorphSaveHub.ShowMenu()
-            else
-                print("|cffff0000ClickMorph:|r SaveHub system not loaded!")
-            end
-        end)
-    yOffset = yOffset - 45
-    
-    -- Botão Debug
-    CreateResponsiveButton(contentFrame, yOffset, "System Debug & Info",
-        "Check system status and debug information\nUseful for troubleshooting",
-        function()
-            if ClickMorphCommands.config.enableSounds then
-                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            end
-            ClickMorphCommands.ShowDebugInfo()
-        end)
-    yOffset = yOffset - 55
-    
-    -- Botão Settings
-    CreateResponsiveButton(contentFrame, yOffset, "Settings & Configuration",
-        "Configure addon behavior and preferences",
-        function()
-            if ClickMorphCommands.config.enableSounds then
-                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            end
-            commandFrame:Hide()
-            C_Timer.After(0.1, function()
-                ClickMorphCommands.ShowSettings()
-            end)
-        end)
-    
+    ClickMorphCommands.commandFrame = commandFrame
+    commandFrame:Show()
     return commandFrame
 end
 
--- Função de Reset melhorada
+-- ========================================
+-- FUNÇÕES DE SUPORTE
+-- ========================================
+
+-- Reset function
 function ClickMorphCommands.ExecuteReset()
     local success = false
     
@@ -328,18 +314,13 @@ function ClickMorphCommands.ExecuteReset()
         if not ClickMorphCommands.config.silentMode then
             print("|cff00ff00ClickMorph:|r Reset executed via ResetIds()")
         end
-    elseif GetClickMorph and GetClickMorph() then
-        -- Tentar usar API do iMorph moderno
-        if iMorphChatHandler then
-            iMorphChatHandler(".reset")
-            success = true
-            if not ClickMorphCommands.config.silentMode then
-                print("|cff00ff00ClickMorph:|r Reset via iMorph chat handler")
-            end
+    elseif iMorphChatHandler then
+        iMorphChatHandler(".reset")
+        success = true
+        if not ClickMorphCommands.config.silentMode then
+            print("|cff00ff00ClickMorph:|r Reset via iMorph handler")
         end
-    end
-    
-    if not success then
+    else
         -- Fallback para comando de chat
         SendChatMessage(".reset", "SAY")
         if not ClickMorphCommands.config.silentMode then
@@ -352,76 +333,82 @@ function ClickMorphCommands.ExecuteReset()
     end
 end
 
--- Função de debug melhorada
+-- Debug function
 function ClickMorphCommands.ShowDebugInfo()
-    CheckSystemStatus()
+    print("|cff00ff00=== ClickMorph Debug Information ===|r")
+    print("Version: Retail Remaster - Unified Command System")
+    print("WoW Version: " .. GetBuildInfo())
     
-    print("|cff00ff00=== ClickMorph Debug Info ===|r")
-    print("|cffffcc00Build:|r " .. ClickMorphCommands.systemInfo.build)
-    print("|cffffcc00WoW Build:|r " .. (GetBuildInfo() or "Unknown"))
-    print("|cffffcc00iMorph Status:|r " .. (ClickMorphCommands.systemInfo.iMorphDetected and "|cff00ff00Detected|r" or "|cffff0000Not Found|r"))
-    print("|cffffcc00API Status:|r " .. ClickMorphCommands.systemInfo.apiStatus)
-    
-    -- Verificar componentes
-    local components = {
-        {"ClickMorphShowAll", ClickMorphShowAll ~= nil},
-        {"ClickMorphSaveHub", ClickMorphSaveHub ~= nil},
-        {"ClickMorphMagiButton", ClickMorphMagiButton ~= nil},
-        {"GetClickMorph", GetClickMorph ~= nil},
-        {"IMorphInfo", IMorphInfo ~= nil},
-        {"ResetIds", ResetIds ~= nil}
-    }
-    
-    print("|cffffcc00Components:|r")
-    for _, comp in ipairs(components) do
-        local status = comp[2] and "|cff00ff00✓|r" or "|cffff0000✗|r"
-        print("  " .. status .. " " .. comp[1])
+    -- Sistema ShowAll
+    if ClickMorphShowAll then
+        local status = ClickMorphShowAll.unlockSystem.isActive and "ACTIVE" or "INACTIVE"
+        print("ShowAll System: |cffffcc00" .. status .. "|r")
+        if ClickMorphShowAll.unlockSystem.isActive then
+            local mounts = #(ClickMorphShowAll.unlockSystem.unobtainableMounts or {})
+            print("  Unobtainable mounts: " .. mounts)
+        end
+    else
+        print("ShowAll System: |cffff0000NOT LOADED|r")
     end
     
-    print("|cffffcc00Settings:|r")
-    for key, value in pairs(ClickMorphCommands.config) do
-        print("  " .. key .. ": " .. tostring(value))
+    -- MagiButton
+    if ClickMorphMagiButton then
+        print("MagiButton System: |cff00ff00LOADED|r")
+    else
+        print("MagiButton System: |cffff0000NOT LOADED|r")
     end
+    
+    -- iMorph integration
+    if ResetIds then
+        print("iMorph Integration: |cff00ff00ACTIVE (ResetIds)|r")
+    elseif iMorphChatHandler then
+        print("iMorph Integration: |cffffcc00ACTIVE (Chat Handler)|r")
+    else
+        print("iMorph Integration: |cffff0000INACTIVE|r")
+    end
+    
+    -- Config
+    print("Silent Mode: " .. (ClickMorphCommands.config.silentMode and "ON" or "OFF"))
+    print("Enable Sounds: " .. (ClickMorphCommands.config.enableSounds and "ON" or "OFF"))
 end
 
-
--- Painel de configurações melhorado
+-- Settings placeholder
 function ClickMorphCommands.ShowSettings()
-    local existingFrame = _G["ClickMorphSettingsFrame"]
-    if existingFrame then
-        existingFrame:Show()
+    -- Se já existe settings frame, apenas mostrar
+    if ClickMorphCommands.settingsFrame then
+        ClickMorphCommands.settingsFrame:Show()
         return
     end
     
-    local settingsFrame = CreateFrame("Frame", "ClickMorphSettingsFrame", UIParent, "PortraitFrameTemplate")
-    settingsFrame:SetSize(400, 380)
-    settingsFrame:SetPoint("CENTER", UIParent, "CENTER")
-    settingsFrame:SetTitle("ClickMorph Settings")
+    -- Criar frame de settings
+    local settingsFrame = CreateFrame("Frame", "ClickMorphSettingsFrame", UIParent, "BasicFrameTemplateWithInset")
+    settingsFrame:SetSize(450, 600)
+    settingsFrame:SetPoint("CENTER")
     settingsFrame:SetMovable(true)
     settingsFrame:EnableMouse(true)
     settingsFrame:RegisterForDrag("LeftButton")
     settingsFrame:SetScript("OnDragStart", settingsFrame.StartMoving)
     settingsFrame:SetScript("OnDragStop", settingsFrame.StopMovingOrSizing)
-    settingsFrame.PortraitContainer.portrait:SetTexture("Interface\\Icons\\INV_Misc_Enggizmos_SwissArmy")
+    settingsFrame:SetClampedToScreen(true)
+    settingsFrame:SetFrameStrata("HIGH")
     
-    settingsFrame:SetScript("OnHide", function(self)
-        C_Timer.After(0.1, function()
-            if commandFrame then
-                commandFrame:Show()
-            end
-        end)
-    end)
+    settingsFrame.title = settingsFrame:CreateFontString(nil, "OVERLAY")
+    settingsFrame.title:SetFontObject("GameFontHighlightLarge")
+    settingsFrame.title:SetPoint("LEFT", settingsFrame.TitleBg, "LEFT", 5, 0)
+    settingsFrame.title:SetText("ClickMorph Settings")
     
-    local yPos = -80
+    local yPos = -50
     
-    -- Título da seção
+    -- ========================================
+    -- SEÇÃO: USER INTERFACE
+    -- ========================================
     local uiHeader = settingsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     uiHeader:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 30, yPos)
     uiHeader:SetText("User Interface")
     uiHeader:SetTextColor(1, 0.8, 0)
-    yPos = yPos - 30
+    yPos = yPos - 35
     
-    -- Checkboxes de configuração
+    -- Enable UI Sounds
     local soundCheck = CreateFrame("CheckButton", nil, settingsFrame, "InterfaceOptionsCheckButtonTemplate")
     soundCheck:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 30, yPos)
     soundCheck.Text:SetText("Enable UI Sounds")
@@ -433,21 +420,9 @@ function ClickMorphCommands.ShowSettings()
             PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
         end
     end)
-    yPos = yPos - 30
+    yPos = yPos - 35
     
-    local autoCloseCheck = CreateFrame("CheckButton", nil, settingsFrame, "InterfaceOptionsCheckButtonTemplate")
-    autoCloseCheck:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 30, yPos)
-    autoCloseCheck.Text:SetText("Auto-close menu after actions")
-    autoCloseCheck:SetChecked(ClickMorphCommands.config.autoClose)
-    autoCloseCheck:SetScript("OnClick", function(self)
-        ClickMorphCommands.config.autoClose = self:GetChecked()
-        SaveConfig()
-        if ClickMorphCommands.config.enableSounds then
-            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-        end
-    end)
-    yPos = yPos - 30
-    
+    -- Silent Mode
     local silentCheck = CreateFrame("CheckButton", nil, settingsFrame, "InterfaceOptionsCheckButtonTemplate")
     silentCheck:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 30, yPos)
     silentCheck.Text:SetText("Silent mode (reduce chat output)")
@@ -459,32 +434,227 @@ function ClickMorphCommands.ShowSettings()
             PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
         end
     end)
-    yPos = yPos - 40
+    yPos = yPos - 35
     
-    -- Seção de ferramentas
+    -- Debug Mode
+    local debugCheck = CreateFrame("CheckButton", nil, settingsFrame, "InterfaceOptionsCheckButtonTemplate")
+    debugCheck:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 30, yPos)
+    debugCheck.Text:SetText("Debug mode (detailed logging)")
+    debugCheck:SetChecked(ClickMorphCommands.config.debugMode)
+    debugCheck:SetScript("OnClick", function(self)
+        ClickMorphCommands.config.debugMode = self:GetChecked()
+        SaveConfig()
+        if ClickMorphCommands.config.enableSounds then
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        end
+    end)
+    yPos = yPos - 50
+    
+    -- ========================================
+    -- SEÇÃO: TOOLS & FEATURES
+    -- ========================================
     local toolsHeader = settingsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     toolsHeader:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 30, yPos)
-    toolsHeader:SetText("Tools")
+    toolsHeader:SetText("Tools & Features")
     toolsHeader:SetTextColor(1, 0.8, 0)
-    yPos = yPos - 30
+    yPos = yPos - 35
     
-    local magicResetCheck = CreateFrame("CheckButton", nil, settingsFrame, "InterfaceOptionsCheckButtonTemplate")
-    magicResetCheck:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 30, yPos)
-    magicResetCheck.Text:SetText("Magic Reset Button (draggable screen button)")
-    magicResetCheck:SetChecked(ClickMorphCommands.config.magicReset)
-    magicResetCheck:SetScript("OnClick", function(self)
-        ClickMorphCommands.config.magicReset = self:GetChecked()
-        SaveConfig()
-        if self:GetChecked() then
-            ClickMorphCommands.CreateMagicResetButton()
+    -- ShowAll System
+    local showAllCheck = CreateFrame("CheckButton", nil, settingsFrame, "InterfaceOptionsCheckButtonTemplate")
+    showAllCheck:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 30, yPos)
+    showAllCheck.Text:SetText("ShowAll System (unlock all transmog/mounts)")
+    
+    -- Verificar se ShowAll está ativo
+    local showAllActive = ClickMorphShowAll and ClickMorphShowAll.unlockSystem and ClickMorphShowAll.unlockSystem.isActive
+    showAllCheck:SetChecked(showAllActive or false)
+    
+    showAllCheck:SetScript("OnClick", function(self)
+        if ClickMorphShowAll and ClickMorphShowAll.ShowConfirmation then
+            if self:GetChecked() then
+                ClickMorphShowAll.ShowConfirmation()
+            else
+                if ClickMorphShowAll.RevertAPIs then
+                    ClickMorphShowAll.RevertAPIs()
+                    print("|cff00ff00ClickMorph:|r ShowAll deactivated")
+                end
+            end
         else
-            ClickMorphCommands.HideMagicResetButton()
+            print("|cffff0000ClickMorph:|r ShowAll system not loaded!")
+            self:SetChecked(false)
         end
         if ClickMorphCommands.config.enableSounds then
             PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
         end
     end)
+    yPos = yPos - 35
     
+    -- ========================================
+    -- MAGIBUTTON INTEGRATION - SEÇÃO PRINCIPAL
+    -- ========================================
+    
+    -- MagiButton - Checkbox principal
+    local magiButtonCheck = CreateFrame("CheckButton", nil, settingsFrame, "InterfaceOptionsCheckButtonTemplate")
+    magiButtonCheck:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 30, yPos)
+    magiButtonCheck.Text:SetText("MagiButton - Draggable screen button")
+    
+    -- Verificar estado atual do MagiButton
+    local magiButtonVisible = false
+    if ClickMorphMagiButton and ClickMorphMagiButton.API then
+        magiButtonVisible = ClickMorphMagiButton.API.IsVisible()
+    end
+    
+    -- Inicializar configuração se não existir
+    if ClickMorphCommands.config.magiButtonEnabled == nil then
+        ClickMorphCommands.config.magiButtonEnabled = magiButtonVisible
+    end
+    
+    magiButtonCheck:SetChecked(ClickMorphCommands.config.magiButtonEnabled)
+    magiButtonCheck:SetScript("OnClick", function(self)
+        ClickMorphCommands.config.magiButtonEnabled = self:GetChecked()
+        SaveConfig()
+        
+        -- Controlar MagiButton
+        if ClickMorphMagiButton and ClickMorphMagiButton.API then
+            if self:GetChecked() then
+                ClickMorphMagiButton.API.Show()
+            else
+                ClickMorphMagiButton.API.Hide()
+            end
+        else
+            print("|cffff0000ClickMorph:|r MagiButton system not loaded!")
+            self:SetChecked(false)
+        end
+        
+        if ClickMorphCommands.config.enableSounds then
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        end
+    end)
+    
+    -- Tooltip para MagiButton
+    magiButtonCheck:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("MagiButton", 1, 1, 1)
+        GameTooltip:AddLine("Draggable button with multiple functions:", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("• Right-Click: Open /cm menu", 0, 1, 0)
+        GameTooltip:AddLine("• Alt+Click: Execute .reset command", 1, 1, 0)
+        GameTooltip:AddLine("• Drag: Move button position", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    
+    magiButtonCheck:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    yPos = yPos - 35
+    
+    -- MagiButton Sounds - Checkbox secundário (indentado)
+    local magiButtonSoundsCheck = CreateFrame("CheckButton", nil, settingsFrame, "InterfaceOptionsCheckButtonTemplate")
+    magiButtonSoundsCheck:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 50, yPos) -- Indentado 20px
+    magiButtonSoundsCheck.Text:SetText("Enable MagiButton sounds")
+    magiButtonSoundsCheck.Text:SetTextColor(0.9, 0.9, 0.9) -- Cor mais suave
+    
+    -- Inicializar configuração de sons
+    if ClickMorphCommands.config.magiButtonSounds == nil then
+        ClickMorphCommands.config.magiButtonSounds = true
+        if ClickMorphMagiButton and ClickMorphMagiButton.config then
+            ClickMorphCommands.config.magiButtonSounds = ClickMorphMagiButton.config.enableSounds
+        end
+    end
+    
+    magiButtonSoundsCheck:SetChecked(ClickMorphCommands.config.magiButtonSounds)
+    magiButtonSoundsCheck:SetScript("OnClick", function(self)
+        ClickMorphCommands.config.magiButtonSounds = self:GetChecked()
+        SaveConfig()
+        
+        -- Sincronizar com MagiButton
+        if ClickMorphMagiButton and ClickMorphMagiButton.API then
+            ClickMorphMagiButton.API.OnSoundsToggle(self:GetChecked())
+        end
+        
+        if ClickMorphCommands.config.enableSounds then
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        end
+    end)
+    
+    -- Tooltip para sons do MagiButton
+    magiButtonSoundsCheck:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("MagiButton Sounds", 1, 1, 1)
+        GameTooltip:AddLine("Controls audio feedback for MagiButton:", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("• Click sounds when using functions", 0, 1, 0)
+        GameTooltip:AddLine("• Independent from main UI sounds", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    
+    magiButtonSoundsCheck:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    yPos = yPos - 50
+    
+    -- ========================================
+    -- SEÇÃO: SYSTEM STATUS
+    -- ========================================
+    local statusHeader = settingsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    statusHeader:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 30, yPos)
+    statusHeader:SetText("System Status")
+    statusHeader:SetTextColor(0.7, 0.7, 1)
+    yPos = yPos - 35
+    
+    -- Status do MagiButton
+    local magiStatus = settingsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    magiStatus:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 40, yPos)
+    local magiLoaded = ClickMorphMagiButton and ClickMorphMagiButton.API
+    magiStatus:SetText("MagiButton System: " .. (magiLoaded and "|cff00ff00LOADED|r" or "|cffff6666NOT LOADED|r"))
+    yPos = yPos - 25
+    
+    -- Status do ShowAll
+    local showAllStatus = settingsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    showAllStatus:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 40, yPos)
+    showAllStatus:SetText("ShowAll System: " .. (showAllActive and "|cff00ff00ACTIVE|r" or "|cffccccccINACTIVE|r"))
+    yPos = yPos - 25
+    
+    -- Status do iMorph
+    local iMorphStatus = settingsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    iMorphStatus:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 40, yPos)
+    local iMorphLoaded = ResetIds or iMorphChatHandler
+    iMorphStatus:SetText("iMorph Integration: " .. (iMorphLoaded and "|cff00ff00ACTIVE|r" or "|cffff6666INACTIVE|r"))
+    yPos = yPos - 40
+    
+    -- Botão de Reset Settings
+    local resetButton = CreateFrame("Button", nil, settingsFrame, "GameMenuButtonTemplate")
+    resetButton:SetPoint("TOPLEFT", settingsFrame, "TOPLEFT", 30, yPos)
+    resetButton:SetSize(120, 25)
+    resetButton:SetText("Reset to Defaults")
+    resetButton:SetScript("OnClick", function()
+        -- Reset configurações para padrão
+        ClickMorphCommands.config.enableSounds = true
+        ClickMorphCommands.config.silentMode = false
+        ClickMorphCommands.config.debugMode = false
+        ClickMorphCommands.config.magiButtonEnabled = false
+        ClickMorphCommands.config.magiButtonSounds = true
+        SaveConfig()
+        
+        -- Atualizar checkboxes
+        soundCheck:SetChecked(true)
+        silentCheck:SetChecked(false)
+        debugCheck:SetChecked(false)
+        magiButtonCheck:SetChecked(false)
+        magiButtonSoundsCheck:SetChecked(true)
+        
+        -- Esconder MagiButton
+        if ClickMorphMagiButton and ClickMorphMagiButton.API then
+            ClickMorphMagiButton.API.Hide()
+        end
+        
+        print("|cff00ff00ClickMorph:|r Settings reset to defaults")
+        
+        if ClickMorphCommands.config.enableSounds then
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        end
+    end)
+    
+    -- Close button
     settingsFrame.CloseButton:SetScript("OnClick", function()
         settingsFrame:Hide()
         if ClickMorphCommands.config.enableSounds then
@@ -492,75 +662,52 @@ function ClickMorphCommands.ShowSettings()
         end
     end)
     
+    ClickMorphCommands.settingsFrame = settingsFrame
     settingsFrame:Show()
 end
 
--- Comandos slash principais
-SLASH_CLICKMORPH1 = "/cm"
-SLASH_CLICKMORPH2 = "/clickmorph"
+-- ========================================
+-- INICIALIZAÇÃO E REGISTRO
+-- ========================================
 
-SlashCmdList["CLICKMORPH"] = function(msg)
-    local args = {strsplit(" ", msg)}
-    local command = string.lower(args[1] or "")
+-- REGISTRAR APENAS UM COMANDO /CM - LIMPAR CONFLITOS
+local function RegisterUnifiedCommand()
+    -- Limpar registros antigos que possam causar conflito
+    SLASH_CLICKMORPH1 = "/cm"
+    SLASH_CLICKMORPH2 = "/clickmorph"
     
-    if command == "" or command == "menu" then
-        CreateCommandFrame()
-        if ClickMorphCommands.config.enableSounds then
-            PlaySound(SOUNDKIT.IG_MAINMENU_OPEN)
-        end
-        
-    elseif command == "reset" then
-        ClickMorphCommands.ExecuteReset()
-        
-    elseif command == "showall" then
-        if ClickMorphShowAll and ClickMorphShowAll.ShowConfirmation then
-            ClickMorphShowAll.ShowConfirmation()
-        else
-            print("|cffff0000ClickMorph:|r ShowAll system not loaded!")
-        end
-        
-    elseif command == "revert" then
-        if ClickMorphShowAll and ClickMorphShowAll.RevertAPIs then
-            ClickMorphShowAll.RevertAPIs()
-            print("|cff00ff00ClickMorph:|r APIs restored to original state")
-        else
-            print("|cffff0000ClickMorph:|r ShowAll system not loaded!")
-        end
-        
-    elseif command == "debug" then
-        ClickMorphCommands.ShowDebugInfo()
-        
-    elseif command == "settings" then
-        ClickMorphCommands.ShowSettings()
-        
-    else
-        print("|cff00ff00ClickMorph Retail Remaster|r - Available commands:")
-        print("|cffffcc00/cm|r - Show main menu")
-        print("|cffffcc00/cm reset|r - Reset appearance")
-        print("|cffffcc00/cm showall|r - Unlock all transmog/mounts")
-        print("|cffffcc00/cm revert|r - Restore original APIs")
-        print("|cffffcc00/cm debug|r - Show debug information")
-        print("|cffffcc00/cm settings|r - Open settings panel")
-    end
+    -- Registrar APENAS nossa versão unificada
+    SlashCmdList["CLICKMORPH"] = UnifiedClickMorphHandler
+    
+    print("|cff00ff00ClickMorph:|r Unified command system loaded! Type |cffffcc00/cm|r for menu.")
 end
 
--- Inicialização do addon
+-- Inicialização quando addon carrega
 local function OnAddonLoaded()
     LoadConfig()
-    CheckSystemStatus()
+    RegisterUnifiedCommand()
     
-    if ClickMorphCommands.config.magicReset then
-        ClickMorphCommands.CreateMagicResetButton()
+    if ClickMorphCommands.config.debugMode then
+        print("|cffccccccClickMorph:|r Debug mode enabled")
     end
-    
-    print("|cff00ff00ClickMorph Retail Remaster|r loaded! Type |cffffcc00/cm|r for menu.")
 end
 
--- Registrar evento de carregamento
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:SetScript("OnEvent", function(self, event, addonName)
+-- Event frame para inicialização
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("ADDON_LOADED")
+initFrame:SetScript("OnEvent", function(self, event, addonName)
     if addonName == "ClickMorph" then
         OnAddonLoaded()
+        initFrame:UnregisterEvent("ADDON_LOADED")
+    end
+end)
+
+-- Limpar outros handlers conflitantes após delay
+C_Timer.After(2, function()
+    -- Garantir que apenas nossa versão esteja ativa
+    SlashCmdList["CLICKMORPH"] = UnifiedClickMorphHandler
+    
+    if ClickMorphCommands.config.debugMode then
+        print("|cffccccccClickMorph:|r Command handler secured")
     end
 end)
