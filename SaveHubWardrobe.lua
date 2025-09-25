@@ -1,54 +1,27 @@
--- ShowAllWardrobe.lua
--- Sistema completo para mostrar todos os itens de transmog (incluindo hidden/unobtainable)
--- e marcar todos como coletados - igual ao sistema de mounts
+-- SaveHubWardrobe.lua
+-- Sistema ShowAll: Montarias 100% funcionais + Wardrobe (stub seguro)
+-- CORRIGIDO: Hooks mais robustos e integração com sistema principal
 
 ClickMorphShowAllWardrobe = {}
 
--- Sistema principal de wardrobe
 ClickMorphShowAllWardrobe.wardrobeSystem = {
     isActive = false,
     originalAPIs = {},
-    unlockedAppearances = 0,
-    unlockedSets = 0,
     debugMode = false,
-    hiddenAppearances = {},
-    hiddenSets = {},
-    appearancesBuilt = false,
-    setsBuilt = false
+    
+    -- Cache para melhor performance
+    mountCache = {},
+    lastRefresh = 0,
+    
+    -- Sistema de pesquisa inteligente
+    customSearchResults = nil,
+    searchMountIDs = {},
+    activeSearch = false
 }
 
--- Base expandida de appearanceIDs hidden/unobtainable
-ClickMorphShowAllWardrobe.HIDDEN_APPEARANCES = {
-    -- Itens de desenvolvedor/GM
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-    -- Itens de teste que nunca foram released
-    50000, 50001, 50002, 50003, 50004, 50005,
-    -- Itens removed/unused de várias expansões
-    25000, 25001, 25002, 25003, 25004,
-    35000, 35001, 35002, 35003, 35004,
-    45000, 45001, 45002, 45003, 45004,
-    -- Itens de eventos especiais não repetíveis
-    15000, 15001, 15002, 15003, 15004,
-    -- Variações unused de tier sets
-    75000, 75001, 75002, 75003, 75004, 75005,
-    -- Alpha/Beta only items
-    99000, 99001, 99002, 99003, 99004
-}
-
--- Base expandida de setIDs hidden/unobtainable
-ClickMorphShowAllWardrobe.HIDDEN_SETS = {
-    -- Sets de desenvolvedor
-    1, 2, 3, 4, 5,
-    -- Sets unused de várias expansões
-    2000, 2001, 2002, 2003, 2004,
-    3000, 3001, 3002, 3003, 3004,
-    -- Sets de teste/debug
-    9000, 9001, 9002, 9003, 9004,
-    -- Sets de eventos únicos
-    8000, 8001, 8002, 8003, 8004
-}
-
--- Debug print global
+-------------------------------------------------
+-- Debug print
+-------------------------------------------------
 local function WardrobeDebugPrint(...)
     if ClickMorphShowAllWardrobe.wardrobeSystem.debugMode then
         local args = {...}
@@ -60,484 +33,396 @@ local function WardrobeDebugPrint(...)
             end
         end
         local message = table.concat(args, " ")
-        print("|cff9966ffWardrobe:|r", message)
+        print("|cff9966ff[Wardrobe]:|r", message)
     end
 end
 
--- Salvar APIs originais
-function ClickMorphShowAllWardrobe.SaveOriginalAPIs()
-    local system = ClickMorphShowAllWardrobe.wardrobeSystem
+-------------------------------------------------
+-- SISTEMA DE MONTARIAS MELHORADO
+-------------------------------------------------
+
+-- Lista de mounts importantes para forçar (incluindo Tyrael e outras hidden)
+local IMPORTANT_MOUNTS = {
+    439,  -- Tyrael's Charger
+    460,  -- Grand Black War Mammoth (Alliance)
+    461,  -- Grand Black War Mammoth (Horde)
+    363,  -- Reins of the Violet Proto-Drake
+    142,  -- Swift Zhevra (Collector's Edition)
+    15,   -- Swift Frostwolf (Horde PvP)
+}
+
+function ClickMorphShowAllWardrobe:ActivateMounts()
+    local system = self.wardrobeSystem
     
+    WardrobeDebugPrint("Activating mount system...")
+    
+    -- Backup APIs originais apenas uma vez
+    if not system.originalAPIs.GetNumMounts then
+        system.originalAPIs.GetNumMounts = C_MountJournal.GetNumMounts
+        system.originalAPIs.GetMountIDs = C_MountJournal.GetMountIDs
+        system.originalAPIs.GetMountInfoByID = C_MountJournal.GetMountInfoByID
+        system.originalAPIs.GetMountInfoExtraByID = C_MountJournal.GetMountInfoExtraByID
+        system.originalAPIs.GetNumDisplayedMounts = C_MountJournal.GetNumDisplayedMounts
+        system.originalAPIs.GetDisplayedMountInfo = C_MountJournal.GetDisplayedMountInfo
+        
+        WardrobeDebugPrint("Original APIs backed up")
+    end
+
+    -- HOOK 1: GetNumMounts - sempre reporta todas como coletadas
+    C_MountJournal.GetNumMounts = function()
+        local numMounts = system.originalAPIs.GetNumMounts()
+        WardrobeDebugPrint("GetNumMounts called, returning:", numMounts, "all collected")
+        return numMounts, true -- segundo valor = todas coletadas
+    end
+
+    -- HOOK 2: GetMountIDs - garante que mounts importantes estão na lista
+    C_MountJournal.GetMountIDs = function()
+        local ids = system.originalAPIs.GetMountIDs() or {}
+        local originalCount = #ids
+        
+        -- Adicionar mounts importantes se não estiverem
+        for _, importantID in ipairs(IMPORTANT_MOUNTS) do
+            if not tContains(ids, importantID) then
+                table.insert(ids, importantID)
+                WardrobeDebugPrint("Added missing important mount:", importantID)
+            end
+        end
+        
+        WardrobeDebugPrint("GetMountIDs: expanded from", originalCount, "to", #ids, "mounts")
+        return ids
+    end
+
+    -- HOOK 3: GetMountInfoByID - força todas como coletadas e usáveis
+    C_MountJournal.GetMountInfoByID = function(mountID)
+        local name, spellID, icon, isActive, isUsable, sourceType, isFavorite,
+              isFactionSpecific, faction, hideOnChar, isCollected, mountID2, isSteady =
+              system.originalAPIs.GetMountInfoByID(mountID)
+
+        -- Forçar como coletada e usável
+        isCollected = true
+        isUsable = true
+        hideOnChar = false
+
+        -- Se não tem nome, gerar um baseado no ID
+        if not name or name == "" then
+            name = "Hidden Mount " .. tostring(mountID)
+            icon = icon or 134400 -- Ícone padrão
+            spellID = spellID or 0
+        end
+
+        WardrobeDebugPrint("GetMountInfoByID:", mountID, "->", name, "collected:", isCollected)
+        
+        return name, spellID, icon, isActive, isUsable, sourceType or 0, isFavorite,
+               isFactionSpecific, faction, hideOnChar, isCollected,
+               mountID2 or mountID, isSteady
+    end
+
+    -- HOOK 4: GetMountInfoExtraByID - corrige dados extras
+    C_MountJournal.GetMountInfoExtraByID = function(mountID)
+        local creatureDisplayInfoID, descriptionText, sourceText, isSelfMount,
+              mountType, uiModelSceneID, animID, spellVisualKitID =
+              system.originalAPIs.GetMountInfoExtraByID(mountID)
+
+        -- Garantir que tem pelo menos um scene ID válido
+        if not uiModelSceneID or uiModelSceneID == 0 then
+            uiModelSceneID = 256 -- Scene ID padrão
+        end
+
+        return creatureDisplayInfoID, descriptionText, sourceText, isSelfMount,
+               mountType, uiModelSceneID, animID, spellVisualKitID
+    end
+    
+    -- HOOK 5: Forçar exibição de todas as mounts no journal
+    self:SetupMountJournalHooks()
+    
+    WardrobeDebugPrint("Mount system activated successfully")
+end
+
+function ClickMorphShowAllWardrobe:SetupMountJournalHooks()
+    local system = self.wardrobeSystem
+    
+    -- SISTEMA DE PESQUISA INTELIGENTE (baseado no ShowAll.lua que funciona)
+    system.customSearchResults = nil
+    system.searchMountIDs = {}
+    system.activeSearch = false
+    
+    -- Hook sistema de pesquisa primeiro
+    if not system.originalAPIs.SetSearch then
+        system.originalAPIs.SetSearch = C_MountJournal.SetSearch
+        
+        C_MountJournal.SetSearch = function(searchText)
+            WardrobeDebugPrint("Search initiated for:", searchText or "empty")
+            
+            -- Chamar pesquisa original
+            local result = system.originalAPIs.SetSearch(searchText)
+            
+            -- Processar pesquisa customizada
+            if searchText and searchText ~= "" and string.len(searchText) > 0 then
+                system.activeSearch = true
+                wipe(system.searchMountIDs)
+                
+                local searchLower = string.lower(searchText)
+                local allIDs = C_MountJournal.GetMountIDs()
+                
+                -- Pesquisar em TODAS as mounts (incluindo hidden)
+                for _, mountID in ipairs(allIDs) do
+                    local name = C_MountJournal.GetMountInfoByID(mountID)
+                    if name and string.find(string.lower(name), searchLower, 1, true) then
+                        table.insert(system.searchMountIDs, mountID)
+                        WardrobeDebugPrint("Search match:", name, "(ID:", mountID, ")")
+                    end
+                end
+                
+                WardrobeDebugPrint("Search found", #system.searchMountIDs, "matches for:", searchText)
+            else
+                system.activeSearch = false
+                wipe(system.searchMountIDs)
+                WardrobeDebugPrint("Search cleared")
+            end
+            
+            -- Force refresh após search
+            C_Timer.After(0.05, function()
+                ClickMorphShowAllWardrobe:RefreshMountJournal()
+            end)
+            
+            return result
+        end
+    end
+    
+    -- Hook search box diretamente (como no ShowAll.lua funcional)
+    C_Timer.After(0.5, function()
+        if MountJournal and MountJournal.searchBox then
+            WardrobeDebugPrint("Hooking search box directly")
+            
+            -- Hook no texto mudando
+            MountJournal.searchBox:HookScript("OnTextChanged", function(self)
+                local text = self:GetText():trim():lower()
+                if #text > 0 then
+                    system.activeSearch = true
+                    wipe(system.searchMountIDs)
+                    
+                    local allIDs = C_MountJournal.GetMountIDs()
+                    for _, mountID in ipairs(allIDs) do
+                        local name = C_MountJournal.GetMountInfoByID(mountID)
+                        if name and string.find(string.lower(name), text, 1, true) then
+                            table.insert(system.searchMountIDs, mountID)
+                        end
+                    end
+                    
+                    WardrobeDebugPrint("Direct search found", #system.searchMountIDs, "matches")
+                    ClickMorphShowAllWardrobe:RefreshMountJournal()
+                else
+                    system.activeSearch = false
+                    wipe(system.searchMountIDs)
+                end
+            end)
+            
+            -- Hook clear functions
+            local function ClearSearch()
+                system.activeSearch = false
+                wipe(system.searchMountIDs)
+                WardrobeDebugPrint("Search cleared via button/hide")
+            end
+            
+            if MountJournal.searchBox.clearButton then
+                MountJournal.searchBox.clearButton:HookScript("OnClick", ClearSearch)
+            end
+            MountJournal.searchBox:HookScript("OnHide", ClearSearch)
+            
+            WardrobeDebugPrint("Search box hooks installed")
+        end
+    end)
+    
+    -- Hook GetNumDisplayedMounts com sistema de pesquisa
+    C_MountJournal.GetNumDisplayedMounts = function()
+        if system.activeSearch then
+            local count = #system.searchMountIDs
+            WardrobeDebugPrint("GetNumDisplayedMounts (search):", count)
+            return count
+        end
+        
+        local allIDs = C_MountJournal.GetMountIDs()
+        local count = #allIDs
+        WardrobeDebugPrint("GetNumDisplayedMounts (all):", count)
+        return count
+    end
+    
+    -- Hook GetDisplayedMountInfo com sistema de pesquisa
+    C_MountJournal.GetDisplayedMountInfo = function(displayIndex)
+        local mountID
+        
+        if system.activeSearch then
+            mountID = system.searchMountIDs[displayIndex]
+            if mountID then
+                WardrobeDebugPrint("GetDisplayedMountInfo (search):", displayIndex, "-> ID", mountID)
+            end
+        else
+            local allIDs = C_MountJournal.GetMountIDs()
+            mountID = allIDs[displayIndex]
+            if mountID then
+                WardrobeDebugPrint("GetDisplayedMountInfo (all):", displayIndex, "-> ID", mountID)
+            end
+        end
+        
+        if not mountID then
+            WardrobeDebugPrint("GetDisplayedMountInfo: no mount at index", displayIndex)
+            return nil
+        end
+        
+        local name, spellID, icon, isActive, isUsable, sourceType, isFavorite,
+              isFactionSpecific, faction, hideOnChar, isCollected, mountID2, isSteady =
+              C_MountJournal.GetMountInfoByID(mountID)
+        
+        return name, spellID, icon, isActive, isUsable, sourceType, isFavorite,
+               isFactionSpecific, faction, hideOnChar, isCollected, mountID, isSteady
+    end
+    
+    WardrobeDebugPrint("Smart search system + display hooks installed")
+end
+
+function ClickMorphShowAllWardrobe:DeactivateMounts()
+    local system = self.wardrobeSystem
+    
+    WardrobeDebugPrint("Deactivating mount system...")
+    
+    -- Restaurar APIs originais
+    if system.originalAPIs.GetNumMounts then
+        C_MountJournal.GetNumMounts = system.originalAPIs.GetNumMounts
+    end
+    if system.originalAPIs.GetMountIDs then
+        C_MountJournal.GetMountIDs = system.originalAPIs.GetMountIDs
+    end
+    if system.originalAPIs.GetMountInfoByID then
+        C_MountJournal.GetMountInfoByID = system.originalAPIs.GetMountInfoByID
+    end
+    if system.originalAPIs.GetMountInfoExtraByID then
+        C_MountJournal.GetMountInfoExtraByID = system.originalAPIs.GetMountInfoExtraByID
+    end
+    if system.originalAPIs.GetNumDisplayedMounts then
+        C_MountJournal.GetNumDisplayedMounts = system.originalAPIs.GetNumDisplayedMounts
+    end
+    if system.originalAPIs.GetDisplayedMountInfo then
+        C_MountJournal.GetDisplayedMountInfo = system.originalAPIs.GetDisplayedMountInfo
+    end
+    
+    WardrobeDebugPrint("Mount APIs restored")
+end
+
+-- Forçar refresh do Mount Journal quando necessário
+function ClickMorphShowAllWardrobe:RefreshMountJournal()
+    WardrobeDebugPrint("Forcing Mount Journal refresh...")
+    
+    -- Refresh via eventos se possível
+    if MountJournal and MountJournal:IsVisible() then
+        MountJournal_UpdateMountList()
+        WardrobeDebugPrint("Mount Journal refreshed via UpdateMountList")
+    end
+    
+    -- Também disparar evento de mudança
+    if C_MountJournal then
+        pcall(function()
+            -- Força recalcular lista
+            local _ = C_MountJournal.GetNumDisplayedMounts()
+        end)
+    end
+end
+
+-- Hook eventos do Collections UI
+local function SetupCollectionsHooks()
+    WardrobeDebugPrint("Setting up Collections UI hooks...")
+    
+    local eventFrame = CreateFrame("Frame")
+    eventFrame:RegisterEvent("ADDON_LOADED")
+    
+    eventFrame:SetScript("OnEvent", function(self, event, addonName)
+        if addonName == "Blizzard_Collections" then
+            WardrobeDebugPrint("Collections addon loaded, setting up hooks")
+            
+            -- Hook a função de update das mounts
+            if MountJournal_UpdateMountList then
+                hooksecurefunc("MountJournal_UpdateMountList", function()
+                    WardrobeDebugPrint("MountJournal_UpdateMountList called")
+                    ClickMorphShowAllWardrobe:RefreshMountJournal()
+                end)
+            end
+            
+            -- Hook quando Collections abre
+            if CollectionsJournal then
+                CollectionsJournal:HookScript("OnShow", function()
+                    WardrobeDebugPrint("Collections Journal opened")
+                    C_Timer.After(0.1, function()
+                        ClickMorphShowAllWardrobe:RefreshMountJournal()
+                    end)
+                end)
+            end
+        end
+    end)
+end
+
+-- Inicializar hooks quando addon carregar
+SetupCollectionsHooks()
+
+-------------------------------------------------
+-- Wardrobe (stub seguro)
+-------------------------------------------------
+function ClickMorphShowAllWardrobe:ActivateWardrobe()
+    local system = self.wardrobeSystem
+    if system.isActive then
+        print("|cff00ff00ClickMorph Wardrobe:|r Already active!")
+        return
+    end
+
+    WardrobeDebugPrint("Activating wardrobe stubs...")
+
+    -- Salvar APIs originais do transmog
     if not system.originalAPIs.GetCategoryAppearances then
-        -- APIs principais de transmog
         system.originalAPIs.GetCategoryAppearances = C_TransmogCollection.GetCategoryAppearances
         system.originalAPIs.GetAppearanceSources = C_TransmogCollection.GetAppearanceSources
         system.originalAPIs.GetAppearanceSourceInfo = C_TransmogCollection.GetAppearanceSourceInfo
-        system.originalAPIs.GetAllAppearanceSources = C_TransmogCollection.GetAllAppearanceSources
-        
-        -- APIs de sets
-        system.originalAPIs.GetAllSets = C_TransmogSets.GetAllSets
-        system.originalAPIs.GetSetInfo = C_TransmogSets.GetSetInfo
-        system.originalAPIs.GetSetSources = C_TransmogSets.GetSetSources
-        
-        -- APIs de busca/filtro
-        if C_TransmogCollection.SetSearch then
-            system.originalAPIs.SetSearch = C_TransmogCollection.SetSearch
-        end
-        
-        -- API de verificação de coleção
-        if C_TransmogCollection.PlayerHasTransmogByItemInfo then
-            system.originalAPIs.PlayerHasTransmogByItemInfo = C_TransmogCollection.PlayerHasTransmogByItemInfo
-        end
-        
-        if C_TransmogCollection.PlayerHasTransmog then
-            system.originalAPIs.PlayerHasTransmog = C_TransmogCollection.PlayerHasTransmog
-        end
-        
-        WardrobeDebugPrint("Original wardrobe APIs saved successfully")
     end
-end
 
--- Construir lista expandida de appearances hidden
-function ClickMorphShowAllWardrobe.BuildHiddenAppearancesList()
-    local system = ClickMorphShowAllWardrobe.wardrobeSystem
-    
-    if system.appearancesBuilt then
-        WardrobeDebugPrint("Hidden appearances list already built with", #system.hiddenAppearances, "appearances")
-        return system.hiddenAppearances
-    end
-    
-    WardrobeDebugPrint("Building expanded hidden appearances list...")
-    wipe(system.hiddenAppearances)
-    
-    -- Começar com base hardcoded
-    for _, appearanceID in ipairs(ClickMorphShowAllWardrobe.HIDDEN_APPEARANCES) do
-        table.insert(system.hiddenAppearances, appearanceID)
-    end
-    
-    -- NOVO: Descobrir appearances dinamicamente através de gaps nos IDs
-    local knownAppearances = {}
-    
-    -- Mapear appearances já conhecidas
-    for categoryID = 1, 30 do
-        local categoryAppearances = system.originalAPIs.GetCategoryAppearances(categoryID)
-        if categoryAppearances then
-            for _, appearanceID in ipairs(categoryAppearances) do
-                knownAppearances[appearanceID] = true
-            end
-        end
-    end
-    
-    WardrobeDebugPrint("Found", table.getn(knownAppearances), "known appearances from API")
-    
-    -- Descobrir gaps nos IDs (appearances missing)
-    local maxKnownID = 0
-    for appearanceID in pairs(knownAppearances) do
-        if appearanceID > maxKnownID then
-            maxKnownID = appearanceID
-        end
-    end
-    
-    local gapsFound = 0
-    local maxGapsToAdd = 1000 -- Limite para não sobrecarregar
-    
-    for appearanceID = 1, maxKnownID do
-        if not knownAppearances[appearanceID] and gapsFound < maxGapsToAdd then
-            -- Verificar se é um ID válido tentando obter info
-            local sources = system.originalAPIs.GetAppearanceSources(appearanceID)
-            if sources and #sources > 0 then
-                table.insert(system.hiddenAppearances, appearanceID)
-                gapsFound = gapsFound + 1
-                WardrobeDebugPrint("Found hidden appearance ID:", appearanceID)
-            end
-        end
-    end
-    
-    WardrobeDebugPrint("Discovered", gapsFound, "additional hidden appearances via gap analysis")
-    
-    -- NOVO: Descobrir através de item scanning
-    local itemScanCount = 0
-    for itemID = 1, 200000 do -- Scan range de items
-        if itemScanCount > 500 then break end -- Limite para performance
-        
-        local itemName, itemLink, itemQuality, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount, itemEquipLoc, itemTexture = GetItemInfo(itemID)
-        if itemName and itemEquipLoc and itemEquipLoc ~= "" and itemEquipLoc ~= "INVTYPE_NON_EQUIP" then
-            -- Tentar obter appearance deste item
-            local appearanceID, sourceID = C_TransmogCollection.GetItemInfo(itemID)
-            if appearanceID and not knownAppearances[appearanceID] then
-                table.insert(system.hiddenAppearances, appearanceID)
-                knownAppearances[appearanceID] = true
-                itemScanCount = itemScanCount + 1
-                WardrobeDebugPrint("Found hidden appearance from item scan:", appearanceID, "from item", itemID)
-            end
-        end
-        
-        -- Performance throttle
-        if itemID % 1000 == 0 then
-            coroutine.yield()
-        end
-    end
-    
-    -- Remover duplicatas e ordenar
-    local uniqueAppearances = {}
-    local seenAppearances = {}
-    for _, appearanceID in ipairs(system.hiddenAppearances) do
-        if not seenAppearances[appearanceID] then
-            table.insert(uniqueAppearances, appearanceID)
-            seenAppearances[appearanceID] = true
-        end
-    end
-    table.sort(uniqueAppearances)
-    
-    system.hiddenAppearances = uniqueAppearances
-    system.appearancesBuilt = true
-    
-    WardrobeDebugPrint("Hidden appearances list built with", #system.hiddenAppearances, "total appearances")
-    return system.hiddenAppearances
-end
-
--- Construir lista expandida de sets hidden
-function ClickMorphShowAllWardrobe.BuildHiddenSetsList()
-    local system = ClickMorphShowAllWardrobe.wardrobeSystem
-    
-    if system.setsBuilt then
-        WardrobeDebugPrint("Hidden sets list already built with", #system.hiddenSets, "sets")
-        return system.hiddenSets
-    end
-    
-    WardrobeDebugPrint("Building expanded hidden sets list...")
-    wipe(system.hiddenSets)
-    
-    -- Começar com base hardcoded
-    for _, setID in ipairs(ClickMorphShowAllWardrobe.HIDDEN_SETS) do
-        table.insert(system.hiddenSets, setID)
-    end
-    
-    -- Descobrir sets dinamicamente
-    local knownSets = {}
-    local originalSets = system.originalAPIs.GetAllSets() or {}
-    
-    for _, setData in ipairs(originalSets) do
-        if setData.setID then
-            knownSets[setData.setID] = true
-        end
-    end
-    
-    WardrobeDebugPrint("Found", table.getn(knownSets), "known sets from API")
-    
-    -- Descobrir gaps nos setIDs
-    local maxKnownSetID = 0
-    for setID in pairs(knownSets) do
-        if setID > maxKnownSetID then
-            maxKnownSetID = setID
-        end
-    end
-    
-    local setGapsFound = 0
-    local maxSetGaps = 200 -- Limite menor para sets
-    
-    for setID = 1, maxKnownSetID do
-        if not knownSets[setID] and setGapsFound < maxSetGaps then
-            -- Tentar obter info do set
-            local setInfo = system.originalAPIs.GetSetInfo(setID)
-            if setInfo and setInfo.name then
-                table.insert(system.hiddenSets, setID)
-                setGapsFound = setGapsFound + 1
-                WardrobeDebugPrint("Found hidden set ID:", setID, "named:", setInfo.name)
-            end
-        end
-    end
-    
-    WardrobeDebugPrint("Discovered", setGapsFound, "additional hidden sets via gap analysis")
-    
-    -- Remover duplicatas e ordenar
-    local uniqueSets = {}
-    local seenSets = {}
-    for _, setID in ipairs(system.hiddenSets) do
-        if not seenSets[setID] then
-            table.insert(uniqueSets, setID)
-            seenSets[setID] = true
-        end
-    end
-    table.sort(uniqueSets)
-    
-    system.hiddenSets = uniqueSets
-    system.setsBuilt = true
-    
-    WardrobeDebugPrint("Hidden sets list built with", #system.hiddenSets, "total sets")
-    return system.hiddenSets
-end
-
--- Gerar appearances extras para categoria
-function ClickMorphShowAllWardrobe.GenerateExtraAppearances(categoryID)
-    local extraAppearances = {}
-    local hiddenAppearances = ClickMorphShowAllWardrobe.BuildHiddenAppearancesList()
-    
-    -- Adicionar todas as appearances hidden/unobtainable
-    for _, appearanceID in ipairs(hiddenAppearances) do
-        table.insert(extraAppearances, appearanceID)
-    end
-    
-    WardrobeDebugPrint("Generated", #extraAppearances, "extra appearances for category", categoryID)
-    return extraAppearances
-end
-
--- Instalar hooks do sistema
-function ClickMorphShowAllWardrobe.InstallWardrobe()
-    local system = ClickMorphShowAllWardrobe.wardrobeSystem
-    
-    WardrobeDebugPrint("Installing wardrobe hooks...")
-    
-    -- Hook GetCategoryAppearances - EXPANDE A LISTA
+    -- Stub seguro: só adiciona debug por enquanto
     C_TransmogCollection.GetCategoryAppearances = function(categoryID)
-        local appearances = system.originalAPIs.GetCategoryAppearances(categoryID) or {}
-        
-        WardrobeDebugPrint("GetCategoryAppearances called for category", categoryID)
-        WardrobeDebugPrint("Original count:", #appearances)
-        
-        -- Adicionar appearances hidden/unobtainable
-        local extraAppearances = ClickMorphShowAllWardrobe.GenerateExtraAppearances(categoryID)
-        for _, extraApp in ipairs(extraAppearances) do
-            table.insert(appearances, extraApp)
-        end
-        
-        WardrobeDebugPrint("Expanded count:", #appearances)
-        return appearances
+        local apps = system.originalAPIs.GetCategoryAppearances(categoryID) or {}
+        WardrobeDebugPrint("GetCategoryAppearances called for category", categoryID, "- returned", #apps, "appearances")
+        return apps
     end
-    
-    -- Hook GetAppearanceSourceInfo - MARCA TUDO COMO COLETADO
+
     C_TransmogCollection.GetAppearanceSourceInfo = function(sourceID)
         local info = system.originalAPIs.GetAppearanceSourceInfo(sourceID)
-        
         if info then
-            -- FORÇAR como coletado e usável
-            info.isCollected = true
-            info.isUsable = true
-            info.useError = nil
-            info.useErrorType = nil
-            
-            WardrobeDebugPrint("Marked source", sourceID, "as collected:", info.name or "Unknown")
-            return info
+            WardrobeDebugPrint("GetAppearanceSourceInfo called for source", sourceID, "- found:", info.name or "unnamed")
         end
-        
-        -- Se não existe info original, criar info fake mas válida
-        WardrobeDebugPrint("Creating fake info for source", sourceID)
-        return {
-            sourceID = sourceID,
-            isCollected = true,
-            isUsable = true,
-            sourceType = 1, -- SOURCEFILTER_UNKNOWN
-            quality = 4, -- Epic quality por padrão
-            name = "Hidden Item",
-            useError = nil,
-            useErrorType = nil
-        }
+        return info
     end
-    
-    -- Hook GetAppearanceSources - garante que sources existam
-    C_TransmogCollection.GetAppearanceSources = function(appearanceID)
-        local sources = system.originalAPIs.GetAppearanceSources(appearanceID)
-        
-        if sources and #sources > 0 then
-            WardrobeDebugPrint("Found", #sources, "sources for appearance", appearanceID)
-            return sources
-        end
-        
-        -- Se não tem sources, criar um source fake
-        WardrobeDebugPrint("Creating fake source for appearance", appearanceID)
-        return {appearanceID} -- Usar o próprio appearanceID como sourceID
+
+    C_TransmogCollection.GetAppearanceSources = function(appID)
+        local srcs = system.originalAPIs.GetAppearanceSources(appID) or {}
+        WardrobeDebugPrint("GetAppearanceSources called for appearance", appID, "- returned", #srcs, "sources")
+        return srcs
     end
-    
-    -- Hook GetAllAppearanceSources
-    C_TransmogCollection.GetAllAppearanceSources = function(appearanceID)
-        local sources = system.originalAPIs.GetAllAppearanceSources(appearanceID)
-        
-        if sources and #sources > 0 then
-            return sources
-        end
-        
-        -- Criar source fake se necessário
-        return {appearanceID}
-    end
-    
-    -- Hook PlayerHasTransmog - SEMPRE RETORNA TRUE
-    if system.originalAPIs.PlayerHasTransmog then
-        C_TransmogCollection.PlayerHasTransmog = function(itemID, itemModID)
-            WardrobeDebugPrint("PlayerHasTransmog called for item", itemID, "mod", itemModID, "- returning TRUE")
-            return true
-        end
-    end
-    
-    -- Hook PlayerHasTransmogByItemInfo - SEMPRE RETORNA TRUE
-    if system.originalAPIs.PlayerHasTransmogByItemInfo then
-        C_TransmogCollection.PlayerHasTransmogByItemInfo = function(itemInfo)
-            WardrobeDebugPrint("PlayerHasTransmogByItemInfo called - returning TRUE")
-            return true
-        end
-    end
-    
-    -- HOOKS DE SETS
-    
-    -- Hook GetAllSets - EXPANDE LISTA DE SETS
-    C_TransmogSets.GetAllSets = function()
-        local sets = system.originalAPIs.GetAllSets() or {}
-        local originalCount = #sets
-        
-        WardrobeDebugPrint("GetAllSets called, original count:", originalCount)
-        
-        -- Adicionar sets hidden
-        local hiddenSets = ClickMorphShowAllWardrobe.BuildHiddenSetsList()
-        for _, setID in ipairs(hiddenSets) do
-            local setInfo = system.originalAPIs.GetSetInfo(setID)
-            if setInfo then
-                -- Marcar como coletado
-                setInfo.collected = true
-                setInfo.favorite = false
-                setInfo.limitedTimeSet = false
-                table.insert(sets, setInfo)
-            else
-                -- Criar info fake para set
-                table.insert(sets, {
-                    setID = setID,
-                    name = "Hidden Set " .. setID,
-                    description = "Unobtainable set",
-                    collected = true,
-                    favorite = false,
-                    limitedTimeSet = false,
-                    label = 1,
-                    expansionID = 0,
-                    patchID = 0,
-                    uiOrder = 999,
-                    classMask = 0,
-                    hiddenUntilCollected = false,
-                    requiredFaction = nil
-                })
-            end
-        end
-        
-        WardrobeDebugPrint("Expanded sets count:", #sets)
-        return sets
-    end
-    
-    -- Hook GetSetInfo - MARCA SET COMO COLETADO
-    C_TransmogSets.GetSetInfo = function(setID)
-        local info = system.originalAPIs.GetSetInfo(setID)
-        
-        if info then
-            info.collected = true
-            info.favorite = false
-            WardrobeDebugPrint("Marked set", setID, "as collected:", info.name)
-            return info
-        end
-        
-        -- Criar info fake se não existir
-        WardrobeDebugPrint("Creating fake info for set", setID)
-        return {
-            setID = setID,
-            name = "Hidden Set " .. setID,
-            description = "Unobtainable transmog set",
-            collected = true,
-            favorite = false,
-            limitedTimeSet = false,
-            label = 1,
-            expansionID = 0,
-            patchID = 0,
-            uiOrder = 999,
-            classMask = 0,
-            hiddenUntilCollected = false,
-            requiredFaction = nil
-        }
-    end
-    
+
+    -- Ativar sistema de montarias
+    self:ActivateMounts()
+
     system.isActive = true
-    WardrobeDebugPrint("Wardrobe hooks installed successfully")
+    print("|cff00ff00ClickMorph Wardrobe:|r Activated (Mounts unlocked, Wardrobe stubbed safely)")
+    WardrobeDebugPrint("Wardrobe system fully activated")
 end
 
--- Ativar sistema de wardrobe
-function ClickMorphShowAllWardrobe.ActivateWardrobe()
-    local system = ClickMorphShowAllWardrobe.wardrobeSystem
-    
-    if system.isActive then
-        WardrobeDebugPrint("Wardrobe system already active")
-        print("|cff00ff00ClickMorph Wardrobe:|r System already active!")
-        return
-    end
-    
-    WardrobeDebugPrint("Activating wardrobe unlock system...")
-    
-    -- Salvar APIs originais
-    ClickMorphShowAllWardrobe.SaveOriginalAPIs()
-    
-    -- Instalar hooks
-    ClickMorphShowAllWardrobe.InstallWardrobe()
-    
-    -- Construir listas de items hidden (async para não travrar)
-    C_Timer.After(0.1, function()
-        ClickMorphShowAllWardrobe.BuildHiddenAppearancesList()
-    end)
-    
-    C_Timer.After(0.2, function()
-        ClickMorphShowAllWardrobe.BuildHiddenSetsList()
-    end)
-    
-    -- Refresh da UI após um delay
-    C_Timer.After(1, function()
-        ClickMorphShowAllWardrobe.RefreshWardrobe()
-        
-        local appearanceCount = #system.hiddenAppearances
-        local setCount = #system.hiddenSets
-        
-        print("|cff00ff00ClickMorph Wardrobe:|r Unlocked " .. appearanceCount .. " hidden appearances and " .. setCount .. " hidden sets!")
-        print("|cff00ff00ClickMorph Wardrobe:|r All transmog items are now marked as collected!")
-        WardrobeDebugPrint("Activation complete")
-    end)
-end
-
--- Refresh da interface do wardrobe
-function ClickMorphShowAllWardrobe.RefreshWardrobe()
-    WardrobeDebugPrint("Refreshing wardrobe interface...")
-    
-    -- Refresh do Collections frame se estiver aberto
-    if CollectionsJournal and CollectionsJournal:IsVisible() then
-        local selectedTab = CollectionsJournal.selectedTab
-        if selectedTab and selectedTab == 5 then -- Wardrobe tab
-            WardrobeCollectionFrame_OnShow(WardrobeCollectionFrame)
-            
-            -- Refresh da aba ativa
-            local activeFrame = WardrobeCollectionFrame.activeFrame
-            if activeFrame and activeFrame.RefreshItems then
-                activeFrame:RefreshItems()
-            end
-            
-            -- Force refresh das várias abas
-            if WardrobeCollectionFrame.ItemsCollectionFrame then
-                WardrobeCollectionFrameTab1_OnClick(WardrobeCollectionFrameTab1)
-            end
-        end
-    end
-    
-    -- Forçar atualização de eventos
-    C_Timer.After(0.1, function()
-        if CollectionsJournal then
-            CollectionsJournal:RegisterEvent("TRANSMOG_COLLECTION_UPDATED")
-        end
-    end)
-    
-    WardrobeDebugPrint("Wardrobe refresh completed")
-end
-
--- Reverter sistema
-function ClickMorphShowAllWardrobe.RevertWardrobe()
-    local system = ClickMorphShowAllWardrobe.wardrobeSystem
-    
-    if not system.isActive then
+function ClickMorphShowAllWardrobe:RevertWardrobe()
+    local system = self.wardrobeSystem
+    if not system.isActive then 
         print("|cff00ff00ClickMorph Wardrobe:|r System not active")
-        return
+        return 
     end
-    
-    WardrobeDebugPrint("Reverting wardrobe system to original state...")
-    
-    -- Restaurar APIs originais
+
+    WardrobeDebugPrint("Reverting wardrobe system...")
+
+    -- Desativar montarias
+    self:DeactivateMounts()
+
+    -- Restaurar wardrobe APIs
     if system.originalAPIs.GetCategoryAppearances then
         C_TransmogCollection.GetCategoryAppearances = system.originalAPIs.GetCategoryAppearances
     end
@@ -547,119 +432,134 @@ function ClickMorphShowAllWardrobe.RevertWardrobe()
     if system.originalAPIs.GetAppearanceSourceInfo then
         C_TransmogCollection.GetAppearanceSourceInfo = system.originalAPIs.GetAppearanceSourceInfo
     end
-    if system.originalAPIs.GetAllSets then
-        C_TransmogSets.GetAllSets = system.originalAPIs.GetAllSets
-    end
-    if system.originalAPIs.GetSetInfo then
-        C_TransmogSets.GetSetInfo = system.originalAPIs.GetSetInfo
-    end
-    if system.originalAPIs.PlayerHasTransmog then
-        C_TransmogCollection.PlayerHasTransmog = system.originalAPIs.PlayerHasTransmog
-    end
-    if system.originalAPIs.PlayerHasTransmogByItemInfo then
-        C_TransmogCollection.PlayerHasTransmogByItemInfo = system.originalAPIs.PlayerHasTransmogByItemInfo
-    end
-    
-    -- Limpar sistema
-    wipe(system.originalAPIs)
-    wipe(system.hiddenAppearances)
-    wipe(system.hiddenSets)
-    
+
+    -- Limpar cache
+    wipe(system.mountCache)
+    system.lastRefresh = 0
+
     system.isActive = false
-    system.unlockedAppearances = 0
-    system.unlockedSets = 0
-    system.appearancesBuilt = false
-    system.setsBuilt = false
-    
-    -- Refresh da interface
-    ClickMorphShowAllWardrobe.RefreshWardrobe()
-    
-    print("|cff00ff00ClickMorph Wardrobe:|r All wardrobe APIs restored to original state")
-    WardrobeDebugPrint("Wardrobe revert completed")
+    print("|cff00ff00ClickMorph Wardrobe:|r Reverted to original APIs")
+    WardrobeDebugPrint("Wardrobe system reverted successfully")
 end
 
--- Status do sistema
-function ClickMorphShowAllWardrobe.ShowStatus()
-    local system = ClickMorphShowAllWardrobe.wardrobeSystem
-    
-    print("|cff00ff00=== WARDROBE SYSTEM STATUS ===|r")
-    print("Active:", system.isActive and "YES" or "NO")
-    print("Debug Mode:", system.debugMode and "ON" or "OFF")
-    print("APIs Hooked:", next(system.originalAPIs) and "YES" or "NO")
-    
-    if system.isActive then
-        print("Hidden Appearances Loaded:", #system.hiddenAppearances)
-        print("Hidden Sets Loaded:", #system.hiddenSets)
-        print("Appearances Cache Built:", system.appearancesBuilt and "YES" or "NO")
-        print("Sets Cache Built:", system.setsBuilt and "YES" or "NO")
-        
-        print("\nHooked APIs:")
-        for apiName, _ in pairs(system.originalAPIs) do
-            print("  ✓", apiName)
-        end
-    end
-end
-
--- Comandos de wardrobe
+-------------------------------------------------
+-- Comandos Slash
+-------------------------------------------------
 SLASH_CLICKMORPH_WARDROBE1 = "/cmwardrobe"
 SlashCmdList.CLICKMORPH_WARDROBE = function(arg)
-    local command = string.lower(arg or "")
+    local cmd = string.lower(arg or "")
     
-    if command == "on" or command == "" then
-        ClickMorphShowAllWardrobe.ActivateWardrobe()
-    elseif command == "off" then
-        ClickMorphShowAllWardrobe.RevertWardrobe()
-    elseif command == "status" then
-        ClickMorphShowAllWardrobe.ShowStatus()
-    elseif command == "refresh" then
-        ClickMorphShowAllWardrobe.RefreshWardrobe()
-        print("|cff00ff00ClickMorph Wardrobe:|r Wardrobe refreshed")
-    elseif command == "rebuild" then
-        -- Rebuildar caches
-        ClickMorphShowAllWardrobe.wardrobeSystem.appearancesBuilt = false
-        ClickMorphShowAllWardrobe.wardrobeSystem.setsBuilt = false
-        ClickMorphShowAllWardrobe.BuildHiddenAppearancesList()
-        ClickMorphShowAllWardrobe.BuildHiddenSetsList()
-        print("|cff00ff00ClickMorph Wardrobe:|r Rebuilt hidden items cache")
-    elseif command == "debug" then
+    if cmd == "on" or cmd == "" then
+        ClickMorphShowAllWardrobe:ActivateWardrobe()
+        
+    elseif cmd == "off" then
+        ClickMorphShowAllWardrobe:RevertWardrobe()
+        
+    elseif cmd == "debug" then
         ClickMorphShowAllWardrobe.wardrobeSystem.debugMode = not ClickMorphShowAllWardrobe.wardrobeSystem.debugMode
-        print("|cff00ff00ClickMorph Wardrobe:|r Debug mode", ClickMorphShowAllWardrobe.wardrobeSystem.debugMode and "ON" or "OFF")
+        local status = ClickMorphShowAllWardrobe.wardrobeSystem.debugMode and "ON" or "OFF"
+        print("|cff9966ffWardrobe Debug:|r", status)
+        
+    elseif cmd == "refresh" then
+        ClickMorphShowAllWardrobe:RefreshMountJournal()
+        print("|cff00ff00ClickMorph Wardrobe:|r Mount Journal refreshed")
+        
+    elseif cmd == "search" then
+        -- Teste do sistema de pesquisa
+        local system = ClickMorphShowAllWardrobe.wardrobeSystem
+        print("|cff9966ff=== Search System Test ===|r")
+        print("Active Search:", system.activeSearch and "YES" or "NO")
+        print("Search Results:", #system.searchMountIDs)
+        
+        if MountJournal and MountJournal.searchBox then
+            local searchText = MountJournal.searchBox:GetText()
+            print("Current Search:", searchText ~= "" and searchText or "None")
+        end
+        
+    elseif cmd == "test" then
+        -- Teste rápido do sistema
+        local system = ClickMorphShowAllWardrobe.wardrobeSystem
+        print("|cff00ff00=== Wardrobe System Test ===|r")
+        print("Active:", system.isActive and "YES" or "NO")
+        print("APIs hooked:", (next(system.originalAPIs) ~= nil) and "YES" or "NO")
+        
+        if system.isActive then
+            local numMounts = C_MountJournal.GetNumDisplayedMounts()
+            print("Displayed mounts:", numMounts)
+            
+            -- Teste específico do Tyrael
+            local tyrael = C_MountJournal.GetMountInfoByID(439)
+            print("Tyrael found:", tyrael and "YES" or "NO")
+        end
+        
+        
+    elseif cmd == "status" then
+        local system = ClickMorphShowAllWardrobe.wardrobeSystem
+        print("|cff9966ff=== ClickMorph Wardrobe Status ===|r")
+        print("System Active: " .. (system.isActive and "|cff00ff00YES|r" or "|cffff0000NO|r"))
+        print("Debug Mode: " .. (system.debugMode and "|cff00ff00ON|r" or "|cffccccccOFF|r"))
+        print("APIs Hooked: " .. ((next(system.originalAPIs) ~= nil) and "|cff00ff00YES|r" or "|cffff0000NO|r"))
+        print("Mount Cache: " .. #system.mountCache .. " entries")
+        
     else
-        print("|cff00ff00ClickMorph Wardrobe Commands:|r")
-        print("/cmwardrobe on - Activate wardrobe unlock (show all items as collected)")
-        print("/cmwardrobe off - Revert to original wardrobe")
-        print("/cmwardrobe status - Show detailed system status")
-        print("/cmwardrobe refresh - Refresh wardrobe UI")
-        print("/cmwardrobe rebuild - Rebuild hidden items cache")
-        print("/cmwardrobe debug - Toggle debug mode")
+        print("|cff9966ff=== ClickMorph Wardrobe Commands ===|r")
+        print("|cffffcc00/cmwardrobe on|r - Unlock mounts + activate wardrobe stubs")
+        print("|cffffcc00/cmwardrobe off|r - Revert to normal")
+        print("|cffffcc00/cmwardrobe debug|r - Toggle debug mode")
+        print("|cffffcc00/cmwardrobe refresh|r - Force Mount Journal refresh")
+        print("|cffffcc00/cmwardrobe search|r - Test search system")
+        print("|cffffcc00/cmwardrobe test|r - Quick system test")
+        print("|cffffcc00/cmwardrobe status|r - Show system status")
         print("")
-        print("|cffccccccThis system unlocks hidden/unobtainable transmog items")
-        print("and marks all items as collected, similar to the mount system.|r")
+        print("|cffccccccThis system forces ALL mounts to show as collected|r")
+        print("|cffccccccincluding hidden ones like Tyrael's Charger|r")
     end
 end
 
--- Inicialização
-local function Initialize()
-    WardrobeDebugPrint("Initializing ShowAll Wardrobe system...")
-    
-    -- Event frame para detectar quando Collections está carregado
-    local eventFrame = CreateFrame("Frame")
-    eventFrame:RegisterEvent("ADDON_LOADED")
-    eventFrame:SetScript("OnEvent", function(self, event, addonName)
-        if addonName == "Blizzard_Collections" then
-            WardrobeDebugPrint("Blizzard_Collections loaded, wardrobe ready")
-            C_Timer.After(1, function()
-                if ClickMorphShowAllWardrobe.wardrobeSystem.isActive then
-                    ClickMorphShowAllWardrobe.RefreshWardrobe()
+-------------------------------------------------
+-- INTEGRAÇÃO COM SISTEMA PRINCIPAL (se existir)
+-------------------------------------------------
+
+-- Tentar integrar com o sistema ShowAll principal se ele existir
+local function TryIntegrateWithMainSystem()
+    if ClickMorphShowAll and ClickMorphShowAll.unlockSystem then
+        WardrobeDebugPrint("Found main ShowAll system, integrating...")
+        
+        -- Adicionar comando integrado
+        SLASH_CLICKMORPH_SHOWALL_WARDROBE1 = "/cm"
+        SLASH_CLICKMORPH_SHOWALL_WARDROBE2 = "/cmshowall"
+        
+        SlashCmdList.CLICKMORPH_SHOWALL_WARDROBE = function(arg)
+            local cmd = string.lower(arg or "")
+            
+            if cmd == "showall" or cmd == "wardrobe" then
+                ClickMorphShowAllWardrobe:ActivateWardrobe()
+            else
+                -- Passar para o sistema principal se existir
+                if SlashCmdList.CLICKMORPH_SHOWALL then
+                    SlashCmdList.CLICKMORPH_SHOWALL(arg)
+                else
+                    ClickMorphShowAllWardrobe:ActivateWardrobe()
                 end
-            end)
+            end
         end
-    end)
+        
+        WardrobeDebugPrint("Integration with main system complete")
+    else
+        WardrobeDebugPrint("No main ShowAll system found, running standalone")
+    end
 end
 
-Initialize()
+-- Tentar integração após delay
+C_Timer.After(1, TryIntegrateWithMainSystem)
 
-print("|cff00ff00ClickMorph ShowAll Wardrobe|r loaded!")
-print("Use |cffffcc00/cmwardrobe on|r to unlock all transmog appearances and sets")
-print("Use |cffffcc00/cmwardrobe status|r to check system status")
-WardrobeDebugPrint("ShowAllWardrobe.lua loaded successfully")
+-------------------------------------------------
+-- Inicialização
+-------------------------------------------------
+print("|cff9966ff=== ClickMorph ShowAll Wardrobe ===|r")
+print("|cff00ff00Mount system:|r Enhanced with important mount discovery")
+print("|cff00ff00Wardrobe system:|r Safe stub implementation")
+print("|cffffcc00Commands:|r /cmwardrobe on/off/debug/test/status")
+print("|cffcccccc(Auto-integration with main /cm system if available)|r")
+
+WardrobeDebugPrint("SaveHubWardrobe.lua loaded successfully")

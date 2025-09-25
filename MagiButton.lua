@@ -1,1069 +1,768 @@
--- ========================================
--- MagiButton.lua - UNIFIED VERSION
--- Sistema unificado do MagiButton - PREVINE DUPLICAÇÕES
--- ========================================
+-- SaveHubWardrobe.lua - Sistema integrado com menu de configurações (/cm)
+-- Mantém: FACILIDADE DE USO / DINAMISMO E MODULARIDADE
+-- Integra com: ClickMorphCommands.config para ser trigado pelo checkbox do menu
 
--- Prevenir carregamento duplo
-if ClickMorphMagiButton and ClickMorphMagiButton.__initialized then 
-    return 
+ClickMorphShowAllWardrobe = {}
+
+-- Debug system específico para wardrobe
+local function WardrobeDebugPrint(...)
+    if ClickMorphShowAllWardrobe.wardrobeSystem and ClickMorphShowAllWardrobe.wardrobeSystem.debugMode then
+        print("|cffffff00[Wardrobe Debug]|r", ...)
+    end
 end
 
-ClickMorphMagiButton = {__initialized = true}
-
--- Sistema do MagiButton
-ClickMorphMagiButton.buttonSystem = {
-    button = nil,
-    isVisible = true,
-    position = {x = 0, y = -200}, -- Posição padrão longe do centro
-    
-    -- Estado temporário para o toggle
-    temporaryState = {
-        isTemporaryReset = false, -- se está em estado "reset temporário"
-        savedMorph = nil, -- morph que estava antes do reset temporário
-        autoRestoreTimer = nil, -- timer para auto-restore
-        autoRestoreDelay = 300 -- 5 minutos em segundos
-    },
-    
-    -- Configurações
-    settings = {
-        autoRestoreTimeout = true, -- auto-restore após timeout
-        showTooltips = true,
-        buttonSize = 36, -- Será atualizado dinamicamente baseado em ClickMorphMagiButtonSV.buttonSize
-        debugMode = false
-    }
+-- Sistema principal do wardrobe
+ClickMorphShowAllWardrobe.wardrobeSystem = {
+    isActive = false,
+    debugMode = false,
+    originalAPIs = {},
+    hiddenAppearances = {},
+    hiddenSets = {},
+    appearancesBuilt = false,
+    setsBuilt = false,
+    sortedAppearancesList = {},
+    configKey = "showAllWardrobe", -- Chave na config para integração com menu
+    settingsIntegrated = false
 }
 
--- Saved Variables
-ClickMorphMagiButtonSV = ClickMorphMagiButtonSV or {
-    position = {x = 0, y = -200},
-    settings = {
-        autoRestoreTimeout = true,
-        showTooltips = true,
-        debugMode = false
-    },
-    currentIcon = 1, -- Índice do ícone atual
-    buttonSize = 2 -- 1=Pequeno (30), 2=Médio (36), 3=Grande (42)
+-- **SISTEMA DE ORDENAÇÃO ALFABÉTICA PARA WARDROBE** (mesmo sistema das montarias)
+-- Tabela de normalização de acentos para transmog
+ClickMorphShowAllWardrobe.ACCENT_MAP = {
+    -- Letras com acentos agudos
+    ["á"] = "a", ["é"] = "e", ["í"] = "i", ["ó"] = "o", ["ú"] = "u",
+    ["Á"] = "a", ["É"] = "e", ["Í"] = "i", ["Ó"] = "o", ["Ú"] = "u",
+    
+    -- Letras com acentos graves
+    ["à"] = "a", ["è"] = "e", ["ì"] = "i", ["ò"] = "o", ["ù"] = "u",
+    ["À"] = "a", ["È"] = "e", ["Ì"] = "i", ["Ò"] = "o", ["Ù"] = "u",
+    
+    -- Letras com til
+    ["ã"] = "a", ["õ"] = "o", ["ñ"] = "n",
+    ["Ã"] = "a", ["Õ"] = "o", ["Ñ"] = "n",
+    
+    -- Letras com circunflexo
+    ["â"] = "a", ["ê"] = "e", ["î"] = "i", ["ô"] = "o", ["û"] = "u",
+    ["Â"] = "a", ["Ê"] = "e", ["Î"] = "i", ["Ô"] = "o", ["Û"] = "u",
+    
+    -- Letras com trema
+    ["ä"] = "a", ["ë"] = "e", ["ï"] = "i", ["ö"] = "o", ["ü"] = "u",
+    ["Ä"] = "a", ["Ë"] = "e", ["Ï"] = "i", ["Ö"] = "o", ["Ü"] = "u",
+    
+    -- Caracteres especiais
+    ["ç"] = "c", ["Ç"] = "c",
+    ["ß"] = "ss",
+    ["š"] = "s", ["Š"] = "s",
+    ["ž"] = "z", ["Ž"] = "z",
+    ["č"] = "c", ["Č"] = "c",
 }
 
--- Lista de ícones disponíveis
-local iconOptions = {
-    {texture = "Interface\\Icons\\INV_Misc_Enggizmos_SwissArmy", name = "Swiss Army Tool"},
-    {texture = "Interface\\Icons\\INV_Misc_Gear_01", name = "Gear"},  
-    {texture = "Interface\\Icons\\INV_Misc_Enggizmos_19", name = "Engineering Tool"},
-    {texture = "Interface\\Icons\\Spell_Magic_FeatherFall", name = "Magic Feather"},
-    {texture = "Interface\\Icons\\INV_Misc_Rune_01", name = "Magic Rune"}
+-- Artigos para remover na ordenação de transmog
+ClickMorphShowAllWardrobe.ARTICLES_TO_REMOVE = {
+    "^of ", "^the ", "^a ", "^an ",
+    "^de ", "^da ", "^do ", "^das ", "^dos ",
+    "^le ", "^la ", "^les ", "^des ", "^du ",
+    "^el ", "^los ", "^las ",
 }
 
--- Tamanhos disponíveis
-local sizeOptions = {
-    {size = 30, name = "Small"},
-    {size = 36, name = "Medium"},
-    {size = 42, name = "Large"}
+-- **FUNÇÃO DE CRIAÇÃO DE CHAVE DE ORDENAÇÃO PARA TRANSMOG**
+function ClickMorphShowAllWardrobe.CreateSortKey(name)
+    if not name or name == "" then return "" end
+    
+    local sortKey = string.lower(name)
+    
+    -- Aplicar normalização de acentos
+    for accented, plain in pairs(ClickMorphShowAllWardrobe.ACCENT_MAP) do
+        sortKey = sortKey:gsub(accented, plain)
+    end
+    
+    -- Remover artigos
+    for _, article in ipairs(ClickMorphShowAllWardrobe.ARTICLES_TO_REMOVE) do
+        sortKey = sortKey:gsub(article, "")
+    end
+    
+    -- Limpar caracteres especiais
+    sortKey = sortKey:gsub("^%s+", ""):gsub("%s+$", ""):gsub("'", ""):gsub("-", " ")
+    
+    return sortKey
+end
+
+-- **INTEGRAÇÃO COM SISTEMA DE CONFIGURAÇÕES**
+-- Esta função é chamada quando o checkbox no menu /cm é alterado
+function ClickMorphShowAllWardrobe.OnConfigToggle(enabled)
+    WardrobeDebugPrint("Config toggle received:", enabled and "ON" or "OFF")
+    
+    if enabled then
+        ClickMorphShowAllWardrobe.ActivateWardrobe()
+    else
+        ClickMorphShowAllWardrobe.RevertWardrobe()
+    end
+end
+
+-- Registrar integração com o sistema de configurações
+-- function ClickMorphShowAllWardrobe.RegisterWithConfigSystem()
+   -- if ClickMorphCommands and ClickMorphCommands.config then
+       -- local system = ClickMorphShowAllWardrobe.wardrobeSystem
+        
+        -- Inicializar valor na config se não existir
+      --  if ClickMorphCommands.config[system.configKey] == nil then
+       --     ClickMorphCommands.config[system.configKey] = false
+       -- end
+        
+        -- Hook na função SaveConfig para detectar mudanças
+      --  if SaveConfig and not system.settingsIntegrated then
+         --   local originalSaveConfig = SaveConfig
+          --  SaveConfig = function()
+                -- Salvar primeiro
+             --   originalSaveConfig()
+                
+                -- Verificar se nossa configuração mudou
+        --        local currentState = ClickMorphCommands.config[system.configKey]
+       --         if currentState ~= system.isActive then
+        --            ClickMorphShowAllWardrobe.OnConfigToggle(currentState)
+       --         end
+       --     end
+     --       
+       --     system.settingsIntegrated = true
+    --        WardrobeDebugPrint("Integrated with config system")
+     --   end
+   --     
+        -- Aplicar estado inicial se configurado como ativo
+     --   if ClickMorphCommands.config[system.configKey] then
+            --C_Timer.After(1, function()
+               -- ClickMorphShowAllWardrobe.ActivateWardrobe()
+            --end)
+        --end
+   -- else
+        -- Tentar novamente em 2 segundos se o sistema de comandos não carregou ainda
+        --C_Timer.After(2, function()
+            --ClickMorphShowAllWardrobe.RegisterWithConfigSystem()
+        --end)
+    --end
+--end
+
+-- Lista expandida de appearances e sets ocultos
+ClickMorphShowAllWardrobe.HIDDEN_APPEARANCES = {
+    -- Adicione IDs de appearances hidden aqui
+    -- Pode ser expandido facilmente conforme necessário
 }
 
--- Debug print
-local function MagiDebugPrint(...)
-    if ClickMorphMagiButton.buttonSystem.settings.debugMode then
-        local args = {...}
-        for i = 1, #args do
-            if args[i] == nil then
-                args[i] = "nil"
-            elseif type(args[i]) ~= "string" then
-                args[i] = tostring(args[i])
-            end
-        end
-        local message = table.concat(args, " ")
-        print("|cff9933ffMagiButton:|r", message)
-    end
-end
+ClickMorphShowAllWardrobe.HIDDEN_SETS = {
+    -- Adicione IDs de sets hidden aqui
+    -- Exemplo: sets de desenvolvimento, GMs, etc.
+}
 
--- Debug detalhado do botão
-function ClickMorphMagiButton.DebugButton()
-    local system = ClickMorphMagiButton.buttonSystem
+-- **SISTEMA DE CACHE DE ORDENAÇÃO ALFABÉTICA**
+function ClickMorphShowAllWardrobe.BuildSortedAppearancesList()
+    local system = ClickMorphShowAllWardrobe.wardrobeSystem
     
-    if not system.button then
-        print("|cff9933ffMagiButton Debug:|r Button not created!")
-        return
+    if #system.sortedAppearancesList > 0 then
+        WardrobeDebugPrint("Using cached sorted appearances list")
+        return system.sortedAppearancesList
     end
     
-    local button = system.button
-    local icon = button.icon
-    local backdrop = button.backdrop
+    WardrobeDebugPrint("Building sorted appearances list with accent normalization...")
     
-    print("|cff9933ff=== MAGI BUTTON DEBUG ===|r")
+    local allAppearances = {}
     
-    -- Button info
-    print("BUTTON:")
-    print("  Size:", button:GetWidth(), "x", button:GetHeight())
-    print("  Position:", button:GetLeft(), button:GetBottom(), "to", button:GetRight(), button:GetTop())
-    print("  Center:", (button:GetLeft() + button:GetRight())/2, (button:GetBottom() + button:GetTop())/2)
-    print("  Frame Level:", button:GetFrameLevel())
-    print("  Frame Strata:", button:GetFrameStrata())
-    
-    -- Icon info
-    if icon then
-        print("ICON:")
-        print("  Size:", icon:GetWidth(), "x", icon:GetHeight())
-        print("  Position:", icon:GetLeft(), icon:GetBottom(), "to", icon:GetRight(), icon:GetTop())
-        print("  Center:", (icon:GetLeft() + icon:GetRight())/2, (icon:GetBottom() + icon:GetTop())/2)
-        print("  Draw Layer:", icon:GetDrawLayer())
-        print("  Alpha:", icon:GetAlpha())
-        print("  Vertex Color:", icon:GetVertexColor())
-        local texCoords = {icon:GetTexCoord()}
-        print("  TexCoord:", unpack(texCoords))
-        print("  Texture:", icon:GetTexture())
-    else
-        print("ICON: Not found!")
-    end
-    
-    -- Backdrop info
-    if backdrop then
-        print("BACKDROP:")
-        print("  Size:", backdrop:GetWidth(), "x", backdrop:GetHeight())
-        print("  Position:", backdrop:GetLeft(), backdrop:GetBottom(), "to", backdrop:GetRight(), backdrop:GetTop())
-        print("  Center:", (backdrop:GetLeft() + backdrop:GetRight())/2, (backdrop:GetBottom() + backdrop:GetTop())/2)
-        print("  Draw Layer:", backdrop:GetDrawLayer())
-        print("  Alpha:", backdrop:GetAlpha())
-        local r, g, b, a = backdrop:GetVertexColor()
-        print("  Color:", r, g, b, a)
-    else
-        print("BACKDROP: Not found!")
-    end
-    
-    -- Settings info
-    print("SETTINGS:")
-    print("  buttonSize setting:", system.settings.buttonSize)
-    print("  Saved size index:", ClickMorphMagiButtonSV.buttonSize)
-    print("  Current size option:", sizeOptions[ClickMorphMagiButtonSV.buttonSize or 2].name)
-    
-    -- Check overlaps
-    if icon and backdrop then
-        local iconCenterX = (icon:GetLeft() + icon:GetRight())/2
-        local iconCenterY = (icon:GetBottom() + icon:GetTop())/2
-        local backdropCenterX = (backdrop:GetLeft() + backdrop:GetRight())/2
-        local backdropCenterY = (backdrop:GetBottom() + backdrop:GetTop())/2
+    -- Coletar todas as appearances originais
+    for categoryID = 1, 15 do -- Categorias típicas de transmog
+        local categoryAppearances = system.originalAPIs.GetCategoryAppearances(categoryID) or {}
         
-        print("ALIGNMENT:")
-        print("  Icon center:", iconCenterX, iconCenterY)
-        print("  Backdrop center:", backdropCenterX, backdropCenterY)
-        print("  Offset:", iconCenterX - backdropCenterX, iconCenterY - backdropCenterY)
-        
-        if math.abs(iconCenterX - backdropCenterX) > 1 or math.abs(iconCenterY - backdropCenterY) > 1 then
-            print("  WARNING: Not centered!")
-        else
-            print("  OK: Centered")
-        end
-    end
-end
-
--- =============================================================================
--- LIMPEZA DE BOTÕES ANTIGOS
--- =============================================================================
-
--- IMPORTANTE: Destruir qualquer botão antigo que possa existir
-local function DestroyOldButtons()
-    -- Destruir botão antigo do Commands.lua
-    local oldButton = _G["ClickMorphMagicResetButton"] or _G["magicResetButton"]
-    if oldButton then
-        oldButton:Hide()
-        oldButton:SetParent(nil)
-        oldButton = nil
-        MagiDebugPrint("Destroyed old Magic Reset Button")
-    end
-    
-    -- Destruir implementações antigas do MagiButton
-    local oldMagiButton = _G["ClickMorphMagiButton_Old"] or _G["ClickMorphMagiButtonFrame"]
-    if oldMagiButton then
-        oldMagiButton:Hide()
-        oldMagiButton:SetParent(nil)
-        oldMagiButton = nil
-        MagiDebugPrint("Destroyed old MagiButton implementation")
-    end
-    
-    -- Limpar variáveis globais antigas
-    _G["magicResetButton"] = nil
-    _G["ClickMorphMagicResetButton"] = nil
-    _G["ClickMorphMagiButtonFrame"] = nil
-    
-    MagiDebugPrint("Button cleanup completed")
-end
-
--- =============================================================================
--- CORE FUNCTIONS
--- =============================================================================
-
--- Obter morph atual do SaveHub
-function ClickMorphMagiButton.GetCurrentSavedMorph()
-    -- Método 1: Tentar SaveHub primeiro
-    if ClickMorphSaveHub and ClickMorphSaveHub.saveSystem then
-        local session = ClickMorphSaveHub.saveSystem.session
-        local currentMorph = session.lastAppliedMorph or session.currentMorph
-        if currentMorph then
-            MagiDebugPrint("Found morph via SaveHub:", currentMorph.name or currentMorph.id)
-            return currentMorph
-        end
-    end
-    
-    -- Método 2: Verificar IMorphInfo se disponível
-    if IMorphInfo then
-        local hasActiveMorph = false
-        local morphData = {name = "Active Morph", id = "unknown"}
-        
-        -- Verificar se há morph ativo através de qualquer campo do IMorphInfo
-        if IMorphInfo.model and IMorphInfo.model ~= nil then
-            hasActiveMorph = true
-            morphData.id = IMorphInfo.model
-            morphData.name = "Model " .. IMorphInfo.model
-        elseif IMorphInfo.race and IMorphInfo.race ~= nil then
-            hasActiveMorph = true
-            morphData.id = IMorphInfo.race
-            morphData.name = "Race " .. IMorphInfo.race
-        elseif IMorphInfo.items and next(IMorphInfo.items) then
-            hasActiveMorph = true
-            morphData.name = "Item Morph"
-        elseif IMorphInfo.itemset and IMorphInfo.itemset ~= nil then
-            hasActiveMorph = true
-            morphData.id = IMorphInfo.itemset
-            morphData.name = "ItemSet " .. IMorphInfo.itemset
-        elseif IMorphInfo.transmog and IMorphInfo.transmog ~= nil then
-            hasActiveMorph = true
-            morphData.id = IMorphInfo.transmog
-            morphData.name = "Transmog " .. IMorphInfo.transmog
-        end
-        
-        if hasActiveMorph then
-            MagiDebugPrint("Found morph via IMorphInfo:", morphData.name)
-            return morphData
-        end
-    end
-    
-    MagiDebugPrint("No active morph detected")
-    return nil
-end
-
--- Salvar morph atual temporariamente
-function ClickMorphMagiButton.SaveCurrentMorphTemporary()
-    local currentMorph = ClickMorphMagiButton.GetCurrentSavedMorph()
-    
-    if currentMorph then
-        ClickMorphMagiButton.buttonSystem.temporaryState.savedMorph = currentMorph
-        MagiDebugPrint("Saved morph temporarily:", currentMorph.name or "Unnamed")
-        return true
-    end
-    
-    MagiDebugPrint("No current morph to save")
-    return false
-end
-
--- Aplicar reset temporário
-function ClickMorphMagiButton.ApplyTemporaryReset()
-    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
-    
-    -- Salvar morph atual
-    if not ClickMorphMagiButton.SaveCurrentMorphTemporary() then
-        return false
-    end
-    
-    -- CORRIGIDO: Aplicar reset usando método correto
-    if ResetIds then
-        ResetIds() -- Função direta do iMorph
-    else
-        -- Fallback: simular digitação no chat editbox
-        local editBox = ChatEdit_ChooseBoxForSend()
-        if editBox then
-            editBox:SetText(".reset")
-            ChatEdit_SendText(editBox, 1)
-        end
-    end
-    
-    -- Marcar estado temporário
-    tempState.isTemporaryReset = true
-    
-    -- Iniciar timer de auto-restore se configurado
-    if ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout then
-        ClickMorphMagiButton.StartAutoRestoreTimer()
-    end
-    
-    -- Atualizar aparência do botão
-    ClickMorphMagiButton.UpdateButtonAppearance()
-    
-    MagiDebugPrint("Applied temporary reset")
-    return true
-end
-
--- Restaurar morph temporário
-function ClickMorphMagiButton.RestoreTemporaryMorph()
-    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
-    
-    if not tempState.isTemporaryReset or not tempState.savedMorph then
-        MagiDebugPrint("No temporary morph to restore")
-        return false
-    end
-    
-    -- Restaurar através do SaveHub se disponível
-    if ClickMorphSaveHub and ClickMorphSaveHub.API then
-        ClickMorphSaveHub.API.ApplyMorph(tempState.savedMorph)
-    end
-    
-    -- Limpar estado temporário
-    tempState.isTemporaryReset = false
-    ClickMorphMagiButton.CancelAutoRestoreTimer()
-    
-    -- Atualizar aparência do botão
-    ClickMorphMagiButton.UpdateButtonAppearance()
-    
-    print("|cff9933ffMagiButton:|r Morph restored!")
-    MagiDebugPrint("Restored temporary morph:", tempState.savedMorph.name or "Unnamed")
-    
-    tempState.savedMorph = nil
-    return true
-end
-
--- Cancelar reset temporário
-function ClickMorphMagiButton.CancelTemporaryReset()
-    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
-    
-    tempState.isTemporaryReset = false
-    tempState.savedMorph = nil
-    ClickMorphMagiButton.CancelAutoRestoreTimer()
-    ClickMorphMagiButton.UpdateButtonAppearance()
-    
-    print("|cff9933ffMagiButton:|r Temporary reset canceled!")
-    MagiDebugPrint("Temporary reset canceled")
-end
-
--- =============================================================================
--- TIMER FUNCTIONS
--- =============================================================================
-
--- Iniciar timer de auto-restore
-function ClickMorphMagiButton.StartAutoRestoreTimer()
-    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
-    
-    ClickMorphMagiButton.CancelAutoRestoreTimer() -- Cancelar timer existente
-    
-    tempState.autoRestoreTimer = C_Timer.NewTimer(tempState.autoRestoreDelay, function()
-        MagiDebugPrint("Auto-restore timer expired, restoring morph")
-        ClickMorphMagiButton.RestoreTemporaryMorph()
-    end)
-    
-    MagiDebugPrint("Auto-restore timer started:", tempState.autoRestoreDelay, "seconds")
-end
-
--- Cancelar timer de auto-restore
-function ClickMorphMagiButton.CancelAutoRestoreTimer()
-    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
-    
-    if tempState.autoRestoreTimer then
-        tempState.autoRestoreTimer:Cancel()
-        tempState.autoRestoreTimer = nil
-        MagiDebugPrint("Auto-restore timer canceled")
-    end
-end
-
--- =============================================================================
--- BUTTON CREATION & UI
--- =============================================================================
-
--- Carregar posição salva
-function ClickMorphMagiButton.LoadSavedSettings()
-    if ClickMorphMagiButtonSV then
-        ClickMorphMagiButton.buttonSystem.position = ClickMorphMagiButtonSV.position or {x = 0, y = -200}
-        
-        -- Carregar settings
-        local savedSettings = ClickMorphMagiButtonSV.settings or {}
-        for key, value in pairs(savedSettings) do
-            if ClickMorphMagiButton.buttonSystem.settings[key] ~= nil then
-                ClickMorphMagiButton.buttonSystem.settings[key] = value
-            end
-        end
-        
-        -- Carregar ícone atual
-        ClickMorphMagiButtonSV.currentIcon = ClickMorphMagiButtonSV.currentIcon or 1
-        
-        -- Carregar tamanho do botão
-        ClickMorphMagiButtonSV.buttonSize = ClickMorphMagiButtonSV.buttonSize or 2
-        local sizeData = sizeOptions[ClickMorphMagiButtonSV.buttonSize] or sizeOptions[2]
-        ClickMorphMagiButton.buttonSystem.settings.buttonSize = sizeData.size
-    end
-end
-
--- Trocar tamanho do botão
-function ClickMorphMagiButton.CycleSize()
-    local system = ClickMorphMagiButton.buttonSystem
-    
-    if not system.button then
-        print("|cff9933ffMagiButton:|r Button not created yet!")
-        return
-    end
-    
-    -- Próximo tamanho na lista
-    ClickMorphMagiButtonSV.buttonSize = (ClickMorphMagiButtonSV.buttonSize % #sizeOptions) + 1
-    local sizeData = sizeOptions[ClickMorphMagiButtonSV.buttonSize]
-    
-    -- Atualizar tamanho do botão
-    system.settings.buttonSize = sizeData.size
-    system.button:SetSize(sizeData.size, sizeData.size)
-    
-    -- Reajustar ícone
-    system.button.icon:SetSize(sizeData.size - 10, sizeData.size - 10)
-    
-    print("|cff9933ffMagiButton:|r Size changed to: " .. sizeData.name .. " (" .. sizeData.size .. "px)")
-end
-
--- Trocar ícone do botão
-function ClickMorphMagiButton.CycleIcon()
-    local system = ClickMorphMagiButton.buttonSystem
-    
-    if not system.button or not system.button.icon then
-        print("|cff9933ffMagiButton:|r Button not created yet!")
-        return
-    end
-    
-    -- Próximo ícone na lista
-    ClickMorphMagiButtonSV.currentIcon = (ClickMorphMagiButtonSV.currentIcon % #iconOptions) + 1
-    local iconData = iconOptions[ClickMorphMagiButtonSV.currentIcon]
-    
-    -- Atualizar ícone com alinhamento correto
-    system.button.icon:SetTexture(iconData.texture)
-    system.button.icon:SetVertexColor(1, 1, 1, 1)
-    system.button.icon:SetTexCoord(0, 1, 0, 1)
-    
-    print("|cff9933ffMagiButton:|r Icon changed to: " .. iconData.name)
-end
-
--- Salvar configurações
-function ClickMorphMagiButton.SaveSettings()
-    if not ClickMorphMagiButtonSV then
-        ClickMorphMagiButtonSV = {}
-    end
-    
-    ClickMorphMagiButtonSV.position = ClickMorphMagiButton.buttonSystem.position
-    ClickMorphMagiButtonSV.settings = ClickMorphMagiButton.buttonSystem.settings
-end
-
--- Criar o botão físico - VERSÃO ÚNICA
-function ClickMorphMagiButton.CreateButton()
-    local system = ClickMorphMagiButton.buttonSystem
-    
-    -- IMPORTANTE: Verificar se já existe
-    if system.button then
-        MagiDebugPrint("Button already exists, skipping creation")
-        return system.button
-    end
-    
-    -- Limpar botões antigos ANTES de criar o novo
-    DestroyOldButtons()
-    
-    MagiDebugPrint("Creating NEW unified MagiButton")
-    
-    -- Carregar configurações salvas
-    ClickMorphMagiButton.LoadSavedSettings()
-    
-    -- Criar frame do botão com nome único
-    local button = CreateFrame("Button", "ClickMorphMagiButtonUnified", UIParent)
-    button:SetSize(system.settings.buttonSize, system.settings.buttonSize)
-    button:SetPoint("CENTER", UIParent, "CENTER", system.position.x, system.position.y)
-    
-    -- CORRIGIDO: Remover texturas de fundo sem passar nil
-    -- Botão será apenas o ícone, sem fundo
-    -- (Não chamar SetNormalTexture(nil) pois causa erro)
-    
-    -- Background circular opcional (sutil) - CORRIGIDO
-    local backdrop = button:CreateTexture(nil, "BACKGROUND")
-    backdrop:SetSize(system.settings.buttonSize, system.settings.buttonSize) -- Mesmo tamanho que o botão
-    backdrop:SetPoint("CENTER", button, "CENTER")
-    backdrop:SetColorTexture(0.1, 0.1, 0.1, 0.4) -- Fundo escuro sutil
-    button.backdrop = backdrop
-    
-    -- Ícone - CORRIGIDO: Layer mais alta que o backdrop
-    local icon = button:CreateTexture(nil, "OVERLAY") -- MUDOU: ARTWORK → OVERLAY
-    icon:SetSize(system.settings.buttonSize - 6, system.settings.buttonSize - 6) -- Margem de 6px
-    icon:SetPoint("CENTER", button, "CENTER", 0, 0)
-    
-    -- Usar ícone salvo ou padrão (Swiss Army)
-    local iconIndex = ClickMorphMagiButtonSV.currentIcon or 1
-    local iconData = iconOptions[iconIndex] or iconOptions[1]
-    icon:SetTexture(iconData.texture)
-    
-    -- CORRIGIDO: TexCoord e qualidade do ícone
-    icon:SetVertexColor(1, 1, 1, 1)
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- Cortar bordas uniformemente
-    button.icon = icon
-    
-    -- Configurar interação
-    button:SetMovable(true)
-    button:EnableMouse(true)
-    button:RegisterForDrag("LeftButton")
-    button:RegisterForClicks("AnyUp")
-    
-    -- Scripts
-    button:SetScript("OnClick", ClickMorphMagiButton.OnButtonClick)
-    button:SetScript("OnEnter", ClickMorphMagiButton.OnButtonEnter)
-    button:SetScript("OnLeave", ClickMorphMagiButton.OnButtonLeave)
-    button:SetScript("OnDragStart", function(self)
-        self:StartMoving()
-    end)
-    button:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        -- Salvar nova posição
-        local point, _, relativePoint, xOffset, yOffset = self:GetPoint()
-        system.position.x = xOffset
-        system.position.y = yOffset
-        ClickMorphMagiButton.SaveSettings()
-        MagiDebugPrint("Button moved to:", xOffset, yOffset)
-    end)
-    
-    -- Salvar referência
-    system.button = button
-    
-    -- Configurar visibilidade inicial
-    if system.isVisible then
-        button:Show()
-    else
-        button:Hide()
-    end
-    
-    -- Atualizar aparência inicial
-    ClickMorphMagiButton.UpdateButtonAppearance()
-    
-    MagiDebugPrint("Button created successfully at position:", system.position.x, system.position.y)
-    return button
-end
-
--- Click handler do botão
-function ClickMorphMagiButton.OnButtonClick(self, mouseButton)
-    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
-    
-    if mouseButton == "LeftButton" then
-        -- Left-click: toggle entre morph e reset temporário
-        if tempState.isTemporaryReset then
-            -- Está em reset -> restaurar morph
-            if not ClickMorphMagiButton.RestoreTemporaryMorph() then
-                print("|cff9933ffMagiButton:|r Nothing to restore.")
-            end
-        else
-            -- Não está em reset -> aplicar reset temporário
-            if ClickMorphMagiButton.ApplyTemporaryReset() then
-                print("|cff9933ffMagiButton:|r Showing real character. Click again to restore morph!")
-            else
-                print("|cff9933ffMagiButton:|r No morph to temporarily hide.")
-            end
-        end
-        
-    elseif mouseButton == "RightButton" then
-        -- Right-click: menu de opções
-        ClickMorphMagiButton.ShowContextMenu()
-        
-    elseif mouseButton == "MiddleButton" then
-        -- Middle-click: reset permanente (limpa tudo)
-        ClickMorphMagiButton.PermanentReset()
-    end
-end
-
--- Reset permanente (limpa morph e estado temporário)
-function ClickMorphMagiButton.PermanentReset()
-    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
-    
-    MagiDebugPrint("Permanent reset requested")
-    
-    -- CORRIGIDO: Usar o método correto do iMorph
-    if ResetIds then
-        ResetIds() -- Função direta do iMorph
-    else
-        -- Fallback: simular digitação no chat editbox
-        local editBox = ChatEdit_ChooseBoxForSend()
-        if editBox then
-            editBox:SetText(".reset")
-            ChatEdit_SendText(editBox, 1)
-        end
-    end
-    
-    -- Limpar estado temporário
-    tempState.isTemporaryReset = false
-    tempState.savedMorph = nil
-    ClickMorphMagiButton.CancelAutoRestoreTimer()
-    
-    -- Limpar SaveHub session se disponível
-    if ClickMorphSaveHub and ClickMorphSaveHub.saveSystem then
-        ClickMorphSaveHub.saveSystem.session.currentMorph = nil
-    end
-    
-    -- Atualizar aparência do botão
-    ClickMorphMagiButton.UpdateButtonAppearance()
-    
-    print("|cff9933ffMagiButton:|r Permanent reset applied!")
-end
-
--- Atualizar aparência visual do botão
-function ClickMorphMagiButton.UpdateButtonAppearance()
-    local button = ClickMorphMagiButton.buttonSystem.button
-    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
-    
-    if not button then return end
-    
-    if tempState.isTemporaryReset then
-        -- Estado "reset temporário" - botão com cor diferente
-        button:SetNormalTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
-        button:SetPushedTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Down")
-        button:SetAlpha(0.8)
-        
-        -- Efeito visual de "pulsing"
-        if not button.pulseAnimation then
-            button.pulseAnimation = button:CreateAnimationGroup()
-            local pulse = button.pulseAnimation:CreateAnimation("Alpha")
-            pulse:SetFromAlpha(0.8)
-            pulse:SetToAlpha(1.0)
-            pulse:SetDuration(1)
-            pulse:SetSmoothing("IN_OUT")
-            button.pulseAnimation:SetLooping("BOUNCE")
-        end
-        button.pulseAnimation:Play()
-        
-    else
-        -- Estado normal - botão com aparência padrão
-        button:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")
-        button:SetPushedTexture("Interface\\Buttons\\UI-Panel-Button-Down")
-        button:SetAlpha(1.0)
-        
-        -- Parar animação
-        if button.pulseAnimation then
-            button.pulseAnimation:Stop()
-        end
-    end
-end
-
--- Tooltip do botão
-function ClickMorphMagiButton.OnButtonEnter(button)
-    local settings = ClickMorphMagiButton.buttonSystem.settings
-    
-    if not settings.showTooltips then return end
-    
-    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
-    
-    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-    
-    if tempState.isTemporaryReset then
-        GameTooltip:SetText("MagiButton", 1, 1, 1)
-        GameTooltip:AddLine("Currently showing real character", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" ", 1, 1, 1)
-        GameTooltip:AddLine("Left-Click: Restore morph", 0, 1, 0)
-        GameTooltip:AddLine("Right-Click: Options menu", 1, 1, 0)
-        GameTooltip:AddLine("Middle-Click: Permanent reset", 1, 0.5, 0)
-        
-        if tempState.savedMorph then
-            GameTooltip:AddLine(" ", 1, 1, 1)
-            GameTooltip:AddLine("Saved: " .. (tempState.savedMorph.name or "Unknown Morph"), 0.5, 0.5, 1)
-        end
-        
-        -- Mostrar tempo restante do auto-restore se ativo
-        if settings.autoRestoreTimeout and tempState.autoRestoreTimer then
-            GameTooltip:AddLine("Auto-restore in " .. settings.autoRestoreTimeout .. "s", 1, 1, 0)
-        end
-    else
-        GameTooltip:SetText("MagiButton", 1, 1, 1)
-        GameTooltip:AddLine("Toggle between morph and real character", 0.8, 0.8, 0.8, true)
-        GameTooltip:AddLine(" ", 1, 1, 1)
-        GameTooltip:AddLine("Left-Click: Hide morph temporarily", 0, 1, 0)
-        GameTooltip:AddLine("Right-Click: Options menu", 1, 1, 0)
-        GameTooltip:AddLine("Middle-Click: Permanent reset", 1, 0.5, 0)
-        
-        -- Mostrar morph atual se disponível
-        local currentMorph = ClickMorphMagiButton.GetCurrentSavedMorph()
-        if currentMorph then
-            GameTooltip:AddLine(" ", 1, 1, 1)
-            GameTooltip:AddLine("Current: " .. (currentMorph.name or "Unknown Morph"), 0.5, 0.5, 1)
-        end
-    end
-    
-    GameTooltip:Show()
-end
-
-function ClickMorphMagiButton.OnButtonLeave()
-    GameTooltip:Hide()
-end
-
--- =============================================================================
--- VISIBILITY CONTROLS
--- =============================================================================
-
-function ClickMorphMagiButton.ShowButton()
-    local system = ClickMorphMagiButton.buttonSystem
-    
-    if not system.button then
-        ClickMorphMagiButton.CreateButton()
-    else
-        system.button:Show()
-    end
-    
-    system.isVisible = true
-    ClickMorphMagiButton.SaveSettings()
-    print("|cff9933ffMagiButton:|r Button shown!")
-end
-
-function ClickMorphMagiButton.HideButton()
-    local system = ClickMorphMagiButton.buttonSystem
-    
-    if system.button then
-        system.button:Hide()
-    end
-    
-    system.isVisible = false
-    ClickMorphMagiButton.SaveSettings()
-    print("|cff9933ffMagiButton:|r Button hidden!")
-end
-
-function ClickMorphMagiButton.ToggleVisibility()
-    local system = ClickMorphMagiButton.buttonSystem
-    
-    if system.isVisible then
-        ClickMorphMagiButton.HideButton()
-    else
-        ClickMorphMagiButton.ShowButton()
-    end
-end
-
--- =============================================================================
--- CONTEXT MENU - SIMPLES SEM EASYMENU
--- =============================================================================
-
--- Criar menu contextual simples
-function ClickMorphMagiButton.CreateSimpleMenu()
-    local menuFrame = CreateFrame("Frame", "MagiButtonSimpleMenu", UIParent, "BackdropTemplate")
-    menuFrame:SetSize(160, 140) -- Aumentado para comportar mais uma opção
-    menuFrame:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 16,
-        insets = {left = 4, right = 4, top = 4, bottom = 4}
-    })
-    menuFrame:SetBackdropColor(0.1, 0.1, 0.2, 0.9)
-    menuFrame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-    menuFrame:SetFrameStrata("DIALOG")
-    menuFrame:Hide()
-    
-    -- Botão: Toggle Visibility
-    local btnToggle = CreateFrame("Button", nil, menuFrame)
-    btnToggle:SetSize(140, 20)
-    btnToggle:SetPoint("TOP", menuFrame, "TOP", 0, -10)
-    btnToggle:SetNormalFontObject("GameFontNormalSmall")
-    btnToggle:SetText("Toggle Visibility")
-    btnToggle:SetScript("OnClick", function()
-        ClickMorphMagiButton.ToggleVisibility()
-        menuFrame:Hide()
-    end)
-    
-    -- Botão: Permanent Reset
-    local btnReset = CreateFrame("Button", nil, menuFrame)
-    btnReset:SetSize(140, 20)
-    btnReset:SetPoint("TOP", btnToggle, "BOTTOM", 0, -5)
-    btnReset:SetNormalFontObject("GameFontNormalSmall")
-    btnReset:SetText("Permanent Reset")
-    btnReset:SetScript("OnClick", function()
-        ClickMorphMagiButton.PermanentReset()
-        menuFrame:Hide()
-    end)
-    
-    -- Botão: Settings Toggle
-    local btnSettings = CreateFrame("Button", nil, menuFrame)
-    btnSettings:SetSize(140, 20)
-    btnSettings:SetPoint("TOP", btnReset, "BOTTOM", 0, -5)
-    btnSettings:SetNormalFontObject("GameFontNormalSmall")
-    btnSettings:SetText("Auto-Restore: ON")
-    btnSettings:SetScript("OnClick", function()
-        ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout = not ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout
-        ClickMorphMagiButton.SaveSettings()
-        btnSettings:SetText("Auto-Restore: " .. (ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout and "ON" or "OFF"))
-        print("|cff9933ffMagiButton:|r Auto-restore timeout", ClickMorphMagiButton.buttonSystem.settings.autoRestoreTimeout and "ON" or "OFF")
-    end)
-    
-    -- Botão: Change Size
-    local btnSize = CreateFrame("Button", nil, menuFrame)
-    btnSize:SetSize(140, 20)
-    btnSize:SetPoint("TOP", btnSettings, "BOTTOM", 0, -5)
-    btnSize:SetNormalFontObject("GameFontNormalSmall")
-    local currentSize = sizeOptions[ClickMorphMagiButtonSV.buttonSize or 2]
-    btnSize:SetText("Size: " .. (currentSize and currentSize.name or "Medium"))
-    btnSize:SetScript("OnClick", function()
-        ClickMorphMagiButton.CycleSize()
-        local newSize = sizeOptions[ClickMorphMagiButtonSV.buttonSize]
-        btnSize:SetText("Size: " .. newSize.name)
-        menuFrame:Hide()
-    end)
-    
-    -- Botão: Change Icon
-    local btnIcon = CreateFrame("Button", nil, menuFrame)
-    btnIcon:SetSize(140, 20)
-    btnIcon:SetPoint("TOP", btnSize, "BOTTOM", 0, -5)
-    btnIcon:SetNormalFontObject("GameFontNormalSmall")
-    btnIcon:SetText("Change Icon")
-    btnIcon:SetScript("OnClick", function()
-        ClickMorphMagiButton.CycleIcon()
-        menuFrame:Hide()
-    end)
-    
-    -- Estilo dos botões
-    local buttons = {btnToggle, btnReset, btnSettings, btnSize, btnIcon}
-    for _, btn in pairs(buttons) do
-        btn:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")
-        btn:SetPushedTexture("Interface\\Buttons\\UI-Panel-Button-Down")
-        btn:SetHighlightTexture("Interface\\Buttons\\UI-Panel-Button-Highlight", "ADD")
-        btn:GetNormalTexture():SetTexCoord(0, 0.625, 0, 0.6875)
-        btn:GetPushedTexture():SetTexCoord(0, 0.625, 0, 0.6875)
-        btn:GetHighlightTexture():SetTexCoord(0, 0.625, 0, 0.6875)
-    end
-    
-    -- Fechar menu ao clicar fora - CORRIGIDO
-    menuFrame:SetScript("OnShow", function()
-        C_Timer.After(0.1, function()
-            menuFrame:SetScript("OnUpdate", function(self)
-                -- Método compatível para detectar clique fora
-                if IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton") then
-                    local mouseX, mouseY = GetCursorPosition()
-                    local scale = UIParent:GetEffectiveScale()
-                    local frameX = self:GetLeft() * scale
-                    local frameY = self:GetBottom() * scale
-                    local frameRight = self:GetRight() * scale
-                    local frameTop = self:GetTop() * scale
+        for _, appearanceInfo in ipairs(categoryAppearances) do
+            if appearanceInfo and appearanceInfo.visualID then
+                local sources = system.originalAPIs.GetAppearanceSources(appearanceInfo.visualID)
+                if sources and #sources > 0 then
+                    local sourceName = sources[1].name or ("Appearance " .. appearanceInfo.visualID)
                     
-                    -- Se clicou fora do menu, fechar
-                    if mouseX < frameX or mouseX > frameRight or mouseY < frameY or mouseY > frameTop then
-                        self:Hide()
-                        self:SetScript("OnUpdate", nil)
-                    end
+                    table.insert(allAppearances, {
+                        visualID = appearanceInfo.visualID,
+                        name = sourceName,
+                        sortKey = ClickMorphShowAllWardrobe.CreateSortKey(sourceName),
+                        categoryID = categoryID,
+                        isCollected = appearanceInfo.isCollected,
+                        isUsable = appearanceInfo.isUsable,
+                        uiOrder = appearanceInfo.uiOrder,
+                        source = "ORIGINAL"
+                    })
                 end
-            end)
-        end)
-    end)
-    
-    return menuFrame
-end
-
-function ClickMorphMagiButton.ShowContextMenu()
-    local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
-    
-    -- Criar menu se não existir
-    if not ClickMorphMagiButton.contextMenu then
-        ClickMorphMagiButton.contextMenu = ClickMorphMagiButton.CreateSimpleMenu()
-    end
-    
-    local menu = ClickMorphMagiButton.contextMenu
-    
-    -- Posicionar próximo ao cursor
-    local x, y = GetCursorPosition()
-    local scale = UIParent:GetEffectiveScale()
-    menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x/scale + 10, y/scale - 10)
-    
-    -- Mostrar menu
-    menu:Show()
-end
-
--- =============================================================================
--- STATUS & DEBUG
--- =============================================================================
-
-function ClickMorphMagiButton.ShowStatus()
-    local system = ClickMorphMagiButton.buttonSystem
-    local tempState = system.temporaryState
-    
-    print("|cff9933ff=== MAGI BUTTON STATUS ===|r")
-    print("Button Visible:", system.isVisible and "YES" or "NO")
-    print("Button Created:", system.button and "YES" or "NO")
-    print("Temporary Reset:", tempState.isTemporaryReset and "ACTIVE" or "INACTIVE")
-    print("Auto-Restore Timer:", tempState.autoRestoreTimer and "RUNNING" or "STOPPED")
-    print("Debug Mode:", system.settings.debugMode and "ON" or "OFF")
-    
-    if system.button then
-        print("Position: " .. system.position.x .. ", " .. system.position.y)
-    end
-    
-    -- Verificar duplicatas
-    local duplicates = {}
-    for name, obj in pairs(_G) do
-        if type(obj) == "table" and obj.GetObjectType and pcall(obj.GetObjectType, obj) then
-            if obj:GetObjectType() == "Button" and name:find("Magic") then
-                table.insert(duplicates, name)
             end
         end
     end
     
-    if #duplicates > 0 then
-        print("Potential duplicates found:", table.concat(duplicates, ", "))
-    else
-        print("No duplicates detected!")
+    -- Adicionar appearances hidden
+    for _, visualID in ipairs(system.hiddenAppearances) do
+        table.insert(allAppearances, {
+            visualID = visualID,
+            name = "Hidden Appearance " .. visualID,
+            sortKey = ClickMorphShowAllWardrobe.CreateSortKey("Hidden Appearance " .. visualID),
+            categoryID = 1,
+            isCollected = true,
+            isUsable = true,
+            uiOrder = 999999,
+            source = "HIDDEN"
+        })
+    end
+    
+    -- **ORDENAR ALFABETICAMENTE USANDO CHAVE NORMALIZADA**
+    table.sort(allAppearances, function(a, b)
+        return a.sortKey < b.sortKey
+    end)
+    
+    -- Armazenar lista ordenada
+    system.sortedAppearancesList = allAppearances
+    
+    WardrobeDebugPrint("Sorted appearances cache built:", #allAppearances, "items")
+    WardrobeDebugPrint("First 3 items:")
+    for i = 1, math.min(3, #allAppearances) do
+        WardrobeDebugPrint("  " .. i .. ":", allAppearances[i].name, "(" .. allAppearances[i].sortKey .. ")")
+    end
+    
+    return allAppearances
+end
+
+-- Salvar APIs originais
+function ClickMorphShowAllWardrobe.SaveOriginalAPIs()
+    local system = ClickMorphShowAllWardrobe.wardrobeSystem
+    
+    if next(system.originalAPIs) then 
+        WardrobeDebugPrint("Original APIs already saved")
+        return 
+    end
+    
+    -- APIs principais do Transmog Collection
+    system.originalAPIs = {
+        GetCategoryAppearances = C_TransmogCollection.GetCategoryAppearances,
+        GetAppearanceSources = C_TransmogCollection.GetAppearanceSources,
+        GetAllAppearances = C_TransmogCollection.GetAllAppearances,
+        GetAppearanceCamera = C_TransmogCollection.GetAppearanceCamera,
+        GetAppearanceInfoBySource = C_TransmogCollection.GetAppearanceInfoBySource,
+        
+        -- APIs de Sets
+        GetAllSets = C_TransmogSets.GetAllSets,
+        GetSetInfo = C_TransmogSets.GetSetInfo,
+        GetSetPrimaryAppearances = C_TransmogSets.GetSetPrimaryAppearances,
+        GetSetsContainingSourceID = C_TransmogSets.GetSetsContainingSourceID,
+    }
+    
+    WardrobeDebugPrint("Original Transmog APIs saved successfully")
+end
+
+-- Construir lista de appearances hidden
+function ClickMorphShowAllWardrobe.BuildHiddenAppearancesList()
+    local system = ClickMorphShowAllWardrobe.wardrobeSystem
+    
+    if system.appearancesBuilt then 
+        WardrobeDebugPrint("Hidden appearances list already built")
+        return 
+    end
+    
+    WardrobeDebugPrint("Building hidden appearances list...")
+    
+    -- Começar com lista estática conhecida
+    system.hiddenAppearances = {}
+    
+    -- Adicionar appearances conhecidas como hidden
+    for _, visualID in ipairs(ClickMorphShowAllWardrobe.HIDDEN_APPEARANCES) do
+        table.insert(system.hiddenAppearances, visualID)
+    end
+    
+    -- TODO: Aqui poderia fazer scan da database para encontrar mais appearances
+    -- Por enquanto, usar lista estática para manter performance
+    
+    system.appearancesBuilt = true
+    WardrobeDebugPrint("Hidden appearances list built:", #system.hiddenAppearances, "items")
+end
+
+-- Construir lista de sets hidden
+function ClickMorphShowAllWardrobe.BuildHiddenSetsList()
+    local system = ClickMorphShowAllWardrobe.wardrobeSystem
+    
+    if system.setsBuilt then 
+        WardrobeDebugPrint("Hidden sets list already built")
+        return 
+    end
+    
+    WardrobeDebugPrint("Building hidden sets list...")
+    
+    system.hiddenSets = {}
+    
+    for _, setID in ipairs(ClickMorphShowAllWardrobe.HIDDEN_SETS) do
+        table.insert(system.hiddenSets, setID)
+    end
+    
+    system.setsBuilt = true
+    WardrobeDebugPrint("Hidden sets list built:", #system.hiddenSets, "items")
+end
+
+-- **HOOKS DE ORDENAÇÃO ALFABÉTICA PARA WARDROBE**
+function ClickMorphShowAllWardrobe.InstallAlphabeticalSorting()
+    local system = ClickMorphShowAllWardrobe.wardrobeSystem
+    
+    WardrobeDebugPrint("Installing alphabetical sorting for wardrobe...")
+    
+    -- Hook GetCategoryAppearances com ordenação alfabética
+    C_TransmogCollection.GetCategoryAppearances = function(categoryID)
+        WardrobeDebugPrint("GetCategoryAppearances called for category", categoryID)
+        
+        local sortedList = ClickMorphShowAllWardrobe.BuildSortedAppearancesList()
+        local categoryAppearances = {}
+        
+        -- Filtrar por categoria e retornar ordenado alfabeticamente
+        for _, appearance in ipairs(sortedList) do
+            if not categoryID or appearance.categoryID == categoryID then
+                table.insert(categoryAppearances, {
+                    visualID = appearance.visualID,
+                    isCollected = true, -- Marcar todas como coletadas
+                    isUsable = true,
+                    isHideVisual = false,
+                    uiOrder = #categoryAppearances + 1,
+                    categoryID = appearance.categoryID
+                })
+            end
+        end
+        
+        WardrobeDebugPrint("Returning", #categoryAppearances, "appearances for category", categoryID, "in alphabetical order")
+        return categoryAppearances
+    end
+    
+    -- Hook GetAllAppearances com ordenação
+    C_TransmogCollection.GetAllAppearances = function()
+        WardrobeDebugPrint("GetAllAppearances called")
+        
+        local sortedList = ClickMorphShowAllWardrobe.BuildSortedAppearancesList()
+        local allAppearances = {}
+        
+        for _, appearance in ipairs(sortedList) do
+            table.insert(allAppearances, {
+                visualID = appearance.visualID,
+                isCollected = true,
+                isUsable = true,
+                isHideVisual = false,
+                uiOrder = #allAppearances + 1,
+                categoryID = appearance.categoryID
+            })
+        end
+        
+        WardrobeDebugPrint("Returning", #allAppearances, "total appearances in alphabetical order")
+        return allAppearances
+    end
+    
+    -- Hook GetAppearanceSources - sempre marcar como coletado
+    C_TransmogCollection.GetAppearanceSources = function(visualID)
+        local sources = system.originalAPIs.GetAppearanceSources(visualID)
+        
+        if sources then
+            -- Marcar todas as sources como coletadas
+            for _, source in ipairs(sources) do
+                source.isCollected = true
+                source.isHideVisual = false
+            end
+            WardrobeDebugPrint("Marked appearance", visualID, "sources as collected")
+        elseif system.hiddenAppearances and tContains(system.hiddenAppearances, visualID) then
+            -- Criar source fake para appearance hidden
+            sources = {{
+                sourceID = visualID,
+                visualID = visualID,
+                isCollected = true,
+                isHideVisual = false,
+                name = "Hidden Appearance " .. visualID,
+                quality = 4, -- Epic
+                sourceType = 0
+            }}
+            WardrobeDebugPrint("Created fake source for hidden appearance", visualID)
+        end
+        
+        return sources
+    end
+    
+    WardrobeDebugPrint("Alphabetical sorting hooks installed for wardrobe")
+end
+
+-- Instalar hooks principal do wardrobe
+function ClickMorphShowAllWardrobe.InstallWardrobe()
+    local system = ClickMorphShowAllWardrobe.wardrobeSystem
+    
+    WardrobeDebugPrint("Installing wardrobe hooks...")
+    
+    -- Instalar ordenação alfabética
+    ClickMorphShowAllWardrobe.InstallAlphabeticalSorting()
+    
+    -- Hook GetSetInfo - marcar sets como coletados
+    C_TransmogSets.GetSetInfo = function(setID)
+        local info = system.originalAPIs.GetSetInfo(setID)
+        
+        if info then
+            info.collected = true
+            info.favorite = false
+            WardrobeDebugPrint("Marked set", setID, "as collected:", info.name)
+            return info
+        end
+        
+        -- Criar info fake para set hidden se necessário
+        if system.hiddenSets and tContains(system.hiddenSets, setID) then
+            WardrobeDebugPrint("Creating fake info for hidden set", setID)
+            return {
+                setID = setID,
+                name = "Hidden Set " .. setID,
+                description = "Unobtainable transmog set",
+                collected = true,
+                favorite = false,
+                limitedTimeSet = false,
+                label = 1,
+                expansionID = 0,
+                patchID = 0,
+                uiOrder = 999,
+                classMask = 0,
+                hiddenUntilCollected = false,
+                requiredFaction = nil
+            }
+        end
+        
+        return info
+    end
+    
+    -- Hook GetAllSets - expandir com sets hidden
+    C_TransmogSets.GetAllSets = function()
+        local sets = system.originalAPIs.GetAllSets() or {}
+        
+        -- Marcar todos os sets como coletados
+        for _, set in ipairs(sets) do
+            set.collected = true
+            set.favorite = false
+        end
+        
+        -- Adicionar sets hidden
+        for _, setID in ipairs(system.hiddenSets) do
+            local setInfo = system.originalAPIs.GetSetInfo(setID)
+            if setInfo then
+                setInfo.collected = true
+                setInfo.favorite = false
+                table.insert(sets, setInfo)
+            else
+                -- Criar set fake
+                table.insert(sets, {
+                    setID = setID,
+                    name = "Hidden Set " .. setID,
+                    description = "Unobtainable set",
+                    collected = true,
+                    favorite = false,
+                    limitedTimeSet = false,
+                    label = 1,
+                    expansionID = 0,
+                    patchID = 0,
+                    uiOrder = 999,
+                    classMask = 0,
+                    hiddenUntilCollected = false,
+                    requiredFaction = nil
+                })
+            end
+        end
+        
+        WardrobeDebugPrint("Expanded sets count:", #sets)
+        return sets
+    end
+    
+    system.isActive = true
+    WardrobeDebugPrint("Wardrobe hooks installed successfully")
+end
+
+-- Ativar sistema de wardrobe
+function ClickMorphShowAllWardrobe.ActivateWardrobe()
+    local system = ClickMorphShowAllWardrobe.wardrobeSystem
+    
+    if system.isActive then
+        WardrobeDebugPrint("Wardrobe system already active")
+        print("|cff00ff00ClickMorph Wardrobe:|r System already active!")
+        return
+    end
+    
+    WardrobeDebugPrint("Activating wardrobe unlock system...")
+    
+    -- Salvar APIs originais
+    ClickMorphShowAllWardrobe.SaveOriginalAPIs()
+    
+    -- Instalar hooks
+    ClickMorphShowAllWardrobe.InstallWardrobe()
+    
+    -- Construir listas de items hidden (async para não travar)
+    C_Timer.After(0.1, function()
+        ClickMorphShowAllWardrobe.BuildHiddenAppearancesList()
+    end)
+    
+    C_Timer.After(0.2, function()
+        ClickMorphShowAllWardrobe.BuildHiddenSetsList()
+    end)
+    
+    -- Refresh da UI após um delay
+    C_Timer.After(1, function()
+        ClickMorphShowAllWardrobe.RefreshWardrobe()
+        
+        local appearanceCount = #system.hiddenAppearances
+        local setCount = #system.hiddenSets
+        
+        print("|cff00ff00ClickMorph Wardrobe:|r Unlocked " .. appearanceCount .. " hidden appearances and " .. setCount .. " hidden sets!")
+        print("|cff00ff00ClickMorph Wardrobe:|r All transmog items are now marked as collected and alphabetically sorted!")
+        WardrobeDebugPrint("Activation complete")
+    end)
+end
+
+-- **FIX DO SCROLL PARA WARDROBE** (mesmo conceito das montarias)
+function ClickMorphShowAllWardrobe.EnableWardrobeScrollProtection()
+    if not WardrobeCollectionFrame then
+        WardrobeDebugPrint("WardrobeCollectionFrame not found")
+        return
+    end
+    
+    -- Verificar se tem sistema de scroll moderno
+    local scrollFrame = WardrobeCollectionFrame.ItemsCollectionFrame and WardrobeCollectionFrame.ItemsCollectionFrame.PagingFrame
+    if not scrollFrame then
+        WardrobeDebugPrint("Wardrobe scroll frame not found - may be different structure")
+        return
+    end
+    
+    if scrollFrame._clickMorphScrollProtected then
+        WardrobeDebugPrint("Wardrobe scroll protection already active")
+        return
+    end
+    
+    WardrobeDebugPrint("Applying scroll protection to wardrobe...")
+    
+    -- Salvar funções originais se disponíveis
+    scrollFrame._originalWardrobeScrollFunctions = {}
+    
+    -- Desabilitar scroll automático se as funções existirem
+    if scrollFrame.ScrollToElementDataIndex then
+        scrollFrame._originalWardrobeScrollFunctions.ScrollToElementDataIndex = scrollFrame.ScrollToElementDataIndex
+        scrollFrame.ScrollToElementDataIndex = function() end
+    end
+    
+    if scrollFrame.ScrollToPage then
+        scrollFrame._originalWardrobeScrollFunctions.ScrollToPage = scrollFrame.ScrollToPage
+        scrollFrame.ScrollToPage = function() end
+    end
+    
+    scrollFrame._clickMorphScrollProtected = true
+    
+    WardrobeDebugPrint("Wardrobe scroll protection enabled")
+end
+
+-- Refresh da interface do wardrobe
+function ClickMorphShowAllWardrobe.RefreshWardrobe()
+    WardrobeDebugPrint("Refreshing wardrobe interface...")
+    
+    -- Aplicar proteção de scroll
+    ClickMorphShowAllWardrobe.EnableWardrobeScrollProtection()
+    
+    -- Refresh do Collections frame se estiver aberto
+    if CollectionsJournal and CollectionsJournal:IsVisible() then
+        local selectedTab = CollectionsJournal.selectedTab
+        if selectedTab and selectedTab == 5 then -- Wardrobe tab
+            WardrobeCollectionFrame_OnShow(WardrobeCollectionFrame)
+            
+            -- Refresh da aba ativa
+            local activeFrame = WardrobeCollectionFrame.activeFrame
+            if activeFrame and activeFrame.RefreshItems then
+                activeFrame:RefreshItems()
+            end
+            
+            -- Force refresh das várias abas
+            if WardrobeCollectionFrame.ItemsCollectionFrame then
+                WardrobeCollectionFrameTab1_OnClick(WardrobeCollectionFrameTab1)
+            end
+        end
+    end
+    
+    -- Forçar atualização de eventos
+    C_Timer.After(0.1, function()
+        if CollectionsJournal then
+            CollectionsJournal:RegisterEvent("TRANSMOG_COLLECTION_UPDATED")
+        end
+    end)
+    
+    WardrobeDebugPrint("Wardrobe refresh completed")
+end
+
+-- Reverter sistema
+function ClickMorphShowAllWardrobe.RevertWardrobe()
+    local system = ClickMorphShowAllWardrobe.wardrobeSystem
+    
+    if not system.isActive then
+        print("|cff00ff00ClickMorph Wardrobe:|r System not active")
+        return
+    end
+    
+    WardrobeDebugPrint("Reverting wardrobe system to original state...")
+    
+    -- Restaurar APIs originais
+    for apiName, originalFunc in pairs(system.originalAPIs) do
+        if apiName:find("^Get") then -- APIs do C_TransmogCollection
+            C_TransmogCollection[apiName:gsub("^Get", "")] = originalFunc
+        else -- APIs do C_TransmogSets
+            local setApiName = apiName:gsub("^Get", "")
+            C_TransmogSets[setApiName] = originalFunc
+        end
+    end
+    
+    -- Limpar sistema
+    system.isActive = false
+    system.hiddenAppearances = {}
+    system.hiddenSets = {}
+    system.sortedAppearancesList = {}
+    system.appearancesBuilt = false
+    system.setsBuilt = false
+    
+    -- Refresh da interface
+    ClickMorphShowAllWardrobe.RefreshWardrobe()
+    
+    print("|cff00ff00ClickMorph Wardrobe:|r System reverted to original state")
+    WardrobeDebugPrint("Wardrobe system reverted successfully")
+end
+
+-- Mostrar status do sistema
+function ClickMorphShowAllWardrobe.ShowStatus()
+    local system = ClickMorphShowAllWardrobe.wardrobeSystem
+    
+    print("|cff00ff00ClickMorph Wardrobe Status:|r")
+    print("Active:", system.isActive and "YES" or "NO")
+    print("Debug Mode:", system.debugMode and "ON" or "OFF")
+    print("APIs Hooked:", next(system.originalAPIs) and "YES" or "NO")
+    print("Config Integration:", system.settingsIntegrated and "YES" or "NO")
+    
+    if system.isActive then
+        print("Hidden Appearances Loaded:", #system.hiddenAppearances)
+        print("Hidden Sets Loaded:", #system.hiddenSets)
+        print("Appearances Cache Built:", system.appearancesBuilt and "YES" or "NO")
+        print("Sets Cache Built:", system.setsBuilt and "YES" or "NO")
+        print("Sorted Cache Size:", #system.sortedAppearancesList)
+        
+        print("\nHooked APIs:")
+        for apiName, _ in pairs(system.originalAPIs) do
+            print("  ✓", apiName)
+        end
+    end
+    
+    -- Verificar integração com config
+    if ClickMorphCommands and ClickMorphCommands.config then
+        print("\nConfig Integration:")
+        print("  Config Key:", system.configKey)
+        print("  Config Value:", ClickMorphCommands.config[system.configKey] and "true" or "false")
     end
 end
 
--- =============================================================================
--- COMMANDS & API
--- =============================================================================
-
--- Comandos do MagiButton
-SLASH_CLICKMORPH_MAGIBUTTON1 = "/cmbutton"
-SlashCmdList.CLICKMORPH_MAGIBUTTON = function(arg)
+-- Comandos de wardrobe (mantidos para compatibilidade)
+SLASH_CLICKMORPH_WARDROBE1 = "/cmwardrobe"
+SlashCmdList.CLICKMORPH_WARDROBE = function(arg)
     local command = string.lower(arg or "")
     
-    if command == "show" or command == "" then
-        ClickMorphMagiButton.ShowButton()
-        
-    elseif command == "hide" then
-        ClickMorphMagiButton.HideButton()
-        
-    elseif command == "toggle" then
-        ClickMorphMagiButton.ToggleVisibility()
-        
-    elseif command == "reset" then
-        ClickMorphMagiButton.PermanentReset()
-        
+    if command == "on" or command == "" then
+        ClickMorphShowAllWardrobe.ActivateWardrobe()
+    elseif command == "off" then
+        ClickMorphShowAllWardrobe.RevertWardrobe()
     elseif command == "status" then
-        ClickMorphMagiButton.ShowStatus()
-        
+        ClickMorphShowAllWardrobe.ShowStatus()
+    elseif command == "refresh" then
+        ClickMorphShowAllWardrobe.RefreshWardrobe()
+        print("|cff00ff00ClickMorph Wardrobe:|r Wardrobe refreshed")
+    elseif command == "rebuild" then
+        -- Rebuildar caches
+        ClickMorphShowAllWardrobe.wardrobeSystem.appearancesBuilt = false
+        ClickMorphShowAllWardrobe.wardrobeSystem.setsBuilt = false
+        ClickMorphShowAllWardrobe.wardrobeSystem.sortedAppearancesList = {}
+        ClickMorphShowAllWardrobe.BuildHiddenAppearancesList()
+        ClickMorphShowAllWardrobe.BuildHiddenSetsList()
+        print("|cff00ff00ClickMorph Wardrobe:|r Rebuilt hidden items cache")
     elseif command == "debug" then
-        ClickMorphMagiButton.buttonSystem.settings.debugMode = not ClickMorphMagiButton.buttonSystem.settings.debugMode
-        ClickMorphMagiButton.SaveSettings()
-        print("|cff9933ffMagiButton:|r Debug mode", ClickMorphMagiButton.buttonSystem.settings.debugMode and "ON" or "OFF")
-        
-    elseif command == "debuginfo" or command == "info" then
-        ClickMorphMagiButton.DebugButton()
-        
-    elseif command == "testmorph" then
-        local currentMorph = ClickMorphMagiButton.GetCurrentSavedMorph()
-        if currentMorph then
-            print("|cff9933ffMagiButton:|r MORPH DETECTED:", currentMorph.name or currentMorph.id or "unknown")
-        else
-            print("|cff9933ffMagiButton:|r NO MORPH DETECTED")
-        end
-        
-    elseif command == "cleanup" then
-        DestroyOldButtons()
-        print("|cff9933ffMagiButton:|r Cleanup completed!")
-        
-    elseif command == "icon" then
-        ClickMorphMagiButton.CycleIcon()
-        
-    elseif command == "size" then
-        ClickMorphMagiButton.CycleSize()
-        
+        ClickMorphShowAllWardrobe.wardrobeSystem.debugMode = not ClickMorphShowAllWardrobe.wardrobeSystem.debugMode
+        print("|cff00ff00ClickMorph Wardrobe:|r Debug mode", ClickMorphShowAllWardrobe.wardrobeSystem.debugMode and "ON" or "OFF")
     else
-        print("|cff9933ffMagiButton Commands:|r")
-        print("/cmbutton show - Show the MagiButton")
-        print("/cmbutton hide - Hide the MagiButton") 
-        print("/cmbutton toggle - Toggle button visibility")
-        print("/cmbutton reset - Permanent reset (clear all morphs)")
-        print("/cmbutton status - Show system status")
-        print("/cmbutton debug - Toggle debug mode")
-        print("/cmbutton debuginfo - Show detailed position/size info")
-        print("/cmbutton cleanup - Remove old/duplicate buttons")
-        print("/cmbutton icon - Cycle through icon options")
-        print("/cmbutton size - Cycle through size options (Small/Medium/Large)")
+        print("|cff00ff00ClickMorph Wardrobe Commands:|r")
+        print("/cmwardrobe on - Activate wardrobe unlock with alphabetical sorting")
+        print("/cmwardrobe off - Revert to original wardrobe")
+        print("/cmwardrobe status - Show detailed system status")
+        print("/cmwardrobe refresh - Refresh wardrobe UI")
+        print("/cmwardrobe rebuild - Rebuild hidden items cache")
+        print("/cmwardrobe debug - Toggle debug mode")
         print("")
-        print("|cffccccccLeft-Click: Toggle between morph and real character|r")
-        print("|cffccccccRight-Click: Options menu|r")
-        print("|cffccccccMiddle-Click: Permanent reset|r")
-        print("|cffccccccDrag to move the button|r")
+        print("|cffccccccThis system unlocks hidden/unobtainable transmog items,")
+        print("marks all items as collected, and sorts them alphabetically")
+        print("with proper accent normalization.|r")
+        print("")
+        print("|cffccccccIntegrated with /cm settings menu - use checkbox to toggle.|r")
     end
 end
 
--- Public API para outros módulos
-ClickMorphMagiButton.API = {
-    -- Notificar que um morph foi aplicado
-    OnMorphApplied = function(morphData)
-        local tempState = ClickMorphMagiButton.buttonSystem.temporaryState
-        
-        -- Se estava em reset temporário, cancelar porque um novo morph foi aplicado
-        if tempState.isTemporaryReset then
-            MagiDebugPrint("New morph applied while in temporary reset, canceling temporary state")
-            tempState.isTemporaryReset = false
-            tempState.savedMorph = nil
-            ClickMorphMagiButton.CancelAutoRestoreTimer()
-            ClickMorphMagiButton.UpdateButtonAppearance()
-        end
-    end,
+-- **INICIALIZAÇÃO E INTEGRAÇÃO**
+local function Initialize()
+    WardrobeDebugPrint("Initializing SaveHub Wardrobe system...")
     
-    -- Obter estado atual
-    GetState = function()
-        return ClickMorphMagiButton.buttonSystem.temporaryState.isTemporaryReset
-    end,
-    
-    -- Reset permanente
-    PermanentReset = ClickMorphMagiButton.PermanentReset,
-    
-    -- Controle de visibilidade
-    Show = ClickMorphMagiButton.ShowButton,
-    Hide = ClickMorphMagiButton.HideButton,
-    Toggle = ClickMorphMagiButton.ToggleVisibility
-}
-
--- =============================================================================
--- INITIALIZATION
--- =============================================================================
-
--- Inicialização com proteção contra duplicação
-local function InitializeMagiButton()
-    -- Verificar se já foi inicializado
-    if ClickMorphMagiButton.__initialized and ClickMorphMagiButton.buttonSystem.button then
-        MagiDebugPrint("MagiButton already initialized, skipping...")
-        return
-    end
-    
-    MagiDebugPrint("Initializing unified MagiButton...")
-    
-    -- Event frame para inicialização
-    local eventFrame = CreateFrame("Frame", "ClickMorphMagiButtonEventFrame")
+    -- Event frame para detectar quando Collections está carregado
+    local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("ADDON_LOADED")
     eventFrame:RegisterEvent("PLAYER_LOGIN")
     
     eventFrame:SetScript("OnEvent", function(self, event, addonName)
         if event == "ADDON_LOADED" and addonName == "ClickMorph" then
-            MagiDebugPrint("ClickMorph loaded")
+            WardrobeDebugPrint("ClickMorph loaded, attempting config integration...")
             
-        elseif event == "PLAYER_LOGIN" then
-            -- Delay para garantir que tudo carregou
-            C_Timer.After(2, function()
-                -- Limpar botões antigos primeiro
-                DestroyOldButtons()
-                
-                -- Criar o novo botão unificado
-                ClickMorphMagiButton.CreateButton()
-                MagiDebugPrint("MagiButton ready and unified!")
-                print("|cff9933ffClickMorph MagiButton Enhanced|r loaded!")
-                print("Use |cffffcc00/cmbutton show|r to display the unified magic button")
+            -- Tentar registrar com sistema de configurações após pequeno delay
+            C_Timer.After(0.5, function()
+                ClickMorphShowAllWardrobe.RegisterWithConfigSystem()
             end)
             
-            -- Unregister events after initialization
-            self:UnregisterAllEvents()
+        elseif event == "ADDON_LOADED" and addonName == "Blizzard_Collections" then
+            WardrobeDebugPrint("Blizzard_Collections loaded, wardrobe APIs ready")
+            
+            -- Refresh se sistema estiver ativo
+            C_Timer.After(1, function()
+                if ClickMorphShowAllWardrobe.wardrobeSystem.isActive then
+                    ClickMorphShowAllWardrobe.RefreshWardrobe()
+                end
+            end)
+            
+        elseif event == "PLAYER_LOGIN" then
+            WardrobeDebugPrint("Player login, final initialization...")
+            
+            -- Final setup após tudo ter carregado
+            C_Timer.After(3, function()
+                -- Verificar se perdeu integração com config e tentar novamente
+                if not ClickMorphShowAllWardrobe.wardrobeSystem.settingsIntegrated then
+                    ClickMorphShowAllWardrobe.RegisterWithConfigSystem()
+                end
+            end)
         end
     end)
 end
 
--- IMPORTANTE: Só inicializar se não foi inicializado ainda
-if not ClickMorphMagiButton.__initialized then
-    InitializeMagiButton()
-end
-
--- =============================================================================
--- CLEANUP COMMANDS.LUA INTEGRATION
--- =============================================================================
-
--- Desabilitar completamente a função antiga do Commands.lua
-if ClickMorphCommands then
-    -- Sobrescrever funções antigas para evitar conflitos
-    ClickMorphCommands.CreateMagicResetButton = function()
-        MagiDebugPrint("Old CreateMagicResetButton called - redirecting to new MagiButton")
-        ClickMorphMagiButton.ShowButton()
-    end
+-- **API PÚBLICA PARA INTEGRAÇÃO COM MENU /cm**
+ClickMorphShowAllWardrobe.API = {
+    -- Função chamada pelo checkbox do menu settings
+    OnToggle = ClickMorphShowAllWardrobe.OnConfigToggle,
     
-    ClickMorphCommands.HideMagicResetButton = function()
-        MagiDebugPrint("Old HideMagicResetButton called - redirecting to new MagiButton")
-        ClickMorphMagiButton.HideButton()
-    end
+    -- Verificar se está ativo
+    IsActive = function()
+        return ClickMorphShowAllWardrobe.wardrobeSystem.isActive
+    end,
     
-    -- Limpar variáveis antigas
-    ClickMorphCommands.magicResetButton = nil
-end
+    -- Obter key da configuração
+    GetConfigKey = function()
+        return ClickMorphShowAllWardrobe.wardrobeSystem.configKey
+    end,
+    
+    -- Status para debug
+    GetStatus = function()
+        return {
+            isActive = ClickMorphShowAllWardrobe.wardrobeSystem.isActive,
+            isIntegrated = ClickMorphShowAllWardrobe.wardrobeSystem.settingsIntegrated,
+            hiddenAppearances = #ClickMorphShowAllWardrobe.wardrobeSystem.hiddenAppearances,
+            hiddenSets = #ClickMorphShowAllWardrobe.wardrobeSystem.hiddenSets
+        }
+    end
+}
 
-print("|cff9933ffClickMorph MagiButton Enhanced|r - Unified version loaded!")
-print("|cffccccccNo more duplicates! Old 'Magic Reset Button' disabled.|r")
-MagiDebugPrint("MagiButton.lua loaded successfully - UNIFIED VERSION")
+Initialize()
+
+print("|cff00ff00ClickMorph SaveHub Wardrobe|r loaded!")
+print("Integrates with |cffffcc00/cm|r settings menu - look for 'Show All Wardrobe' checkbox")
+print("Manual commands: |cffffcc00/cmwardrobe on/off|r")
+print("Features: |cffffff00Alphabetical sorting with accent normalization + Scroll fix|r")
+WardrobeDebugPrint("SaveHubWardrobe.lua loaded successfully with config integration")

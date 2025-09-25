@@ -354,14 +354,14 @@ function ClickMorphCustomWardrobe:ApplyShowAllConfig()
     local config = self.wardrobeSystem.config
     if config.enableShowAll then
         if ClickMorphShowAllWardrobe and ClickMorphShowAllWardrobe.ActivateWardrobe then
-            ClickMorphShowAllWardrobe.ActivateWardrobe()
+            ClickMorphShowAllWardrobe:ActivateWardrobe()
             if config.chatOutput then
                 print("|cff00ffffWardrobe:|r ShowAll activated!")
             end
         end
     else
         if ClickMorphShowAllWardrobe and ClickMorphShowAllWardrobe.RevertWardrobe then
-            ClickMorphShowAllWardrobe.RevertWardrobe()
+            ClickMorphShowAllWardrobe:RevertWardrobe()
             if config.chatOutput then
                 print("|cff00ffffWardrobe:|r ShowAll deactivated!")
             end
