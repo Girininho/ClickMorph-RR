@@ -3,6 +3,48 @@
 
 ClickMorphCommands = {} -- Global
 
+-- ========================================
+-- PATCH PARA COMMANDS.LUA
+-- Adicione estas linhas no INÍCIO do Commands.lua para desabilitar o botão antigo
+-- ========================================
+
+-- IMPORTANTE: Prevenir criação do botão antigo
+local magicResetButton = nil -- Declarar como local para evitar global
+
+-- Sobrescrever a função antiga de criação do botão
+local function CreateMagicResetButton()
+    -- NÃO fazer nada - o novo MagiButton.lua cuida disso
+    if ClickMorphMagiButton and ClickMorphMagiButton.API then
+        print("|cffccccccRedirecting to new MagiButton system...|r")
+        ClickMorphMagiButton.API.Show()
+    else
+        print("|cffff6666Old Magic Reset Button disabled - use /cmbutton show|r")
+    end
+end
+
+-- Sobrescrever a função antiga de esconder o botão  
+local function HideMagicResetButton()
+    -- NÃO fazer nada - o novo MagiButton.lua cuida disso
+    if ClickMorphMagiButton and ClickMorphMagiButton.API then
+        ClickMorphMagiButton.API.Hide()
+    else
+        print("|cffff6666Old Magic Reset Button disabled - use /cmbutton hide|r")
+    end
+end
+
+-- Prevenir que as funções antigas sejam chamadas
+if ClickMorphCommands then
+    ClickMorphCommands.CreateMagicResetButton = CreateMagicResetButton
+    ClickMorphCommands.HideMagicResetButton = HideMagicResetButton
+end
+
+-- ========================================
+-- RESTO DO COMMANDS.LUA ORIGINAL CONTINUA AQUI...
+-- Apenas REMOVA as funções CreateMagicResetButton() e HideMagicResetButton() 
+-- do Commands.lua original e substitua por este patch
+-- ========================================
+
+
 -- Configurações do addon
 ClickMorphCommands.config = {
     enableSounds = true,
@@ -342,58 +384,6 @@ function ClickMorphCommands.ShowDebugInfo()
     end
 end
 
--- Sistema Magic Reset Button (mantido igual)
-local magicResetButton = nil
-
-function ClickMorphCommands.CreateMagicResetButton()
-    if magicResetButton then return end
-    
-    magicResetButton = CreateFrame("Button", "ClickMorphMagicResetButton", UIParent)
-    magicResetButton:SetSize(32, 32)
-    magicResetButton:SetPoint("CENTER", UIParent, "CENTER", -200, -100)
-    magicResetButton:SetMovable(true)
-    magicResetButton:EnableMouse(true)
-    magicResetButton:RegisterForDrag("LeftButton")
-    
-    local icon = magicResetButton:CreateTexture(nil, "ARTWORK")
-    icon:SetAllPoints()
-    icon:SetTexture("Interface\\Icons\\INV_Misc_Enggizmos_SwissArmy")
-    
-    local highlight = magicResetButton:CreateTexture(nil, "HIGHLIGHT") 
-    highlight:SetAllPoints()
-    highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
-    highlight:SetBlendMode("ADD")
-    
-    magicResetButton:SetScript("OnDragStart", magicResetButton.StartMoving)
-    magicResetButton:SetScript("OnDragStop", magicResetButton.StopMovingOrSizing)
-    
-    magicResetButton:SetScript("OnClick", function(self, button)
-        if button == "LeftButton" then
-            ClickMorphCommands.ExecuteReset()
-        end
-    end)
-    
-    magicResetButton:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Magic Reset Button", 1, 1, 1)
-        GameTooltip:AddLine("Click to reset appearance", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("Drag to move", 0.6, 0.6, 0.6)
-        GameTooltip:Show()
-    end)
-    
-    magicResetButton:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    
-    magicResetButton:Show()
-end
-
-function ClickMorphCommands.HideMagicResetButton()
-    if magicResetButton then
-        magicResetButton:Hide()
-        magicResetButton = nil
-    end
-end
 
 -- Painel de configurações melhorado
 function ClickMorphCommands.ShowSettings()

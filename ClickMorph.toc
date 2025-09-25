@@ -5,14 +5,17 @@
 ## Version: @project-version@
 ## Title: ClickMorphRR
 ## Notes: Lets you alt-click to morph with enhanced iMorph interface and tools
-## Author: Ketho, Icesythe7, Girininho
-## SavedVariables: ClickMorphDB, ClickMorphMagiButtonSV, ClickMorphSaveHubSV
+## Author: Ketho, Icesythe7, Girininho , Claude IA
+## SavedVariables: ClickMorphDB, ClickMorphMagiButtonSV, ClickMorphSaveHubSV, ClickMorphWardrobeDB
 ## SavedVariablesPerCharacter: ClickMorph_iMorphV1
 ## OptionalDeps: TellMeWhen, Blizzard_Collections
 
 # Core Libraries
 Libs\LibStub\LibStub.lua
 Libs\StdUiV2\StdUi.xml
+
+# IMMEDIATE COMPATIBILITY FIX - DEVE SER O PRIMEIRO!
+ImmediateCompatibilityFix.lua
 
 # Original ClickMorph Core
 ClickMorph.lua
@@ -37,7 +40,8 @@ Classic\Mount.lua
 # Original ShowAll
 ShowAll.lua
 
-# iMorph - Enhanced Systems (load after originals)
+# iMorph - Enhanced Systems (load after immediate fix)
+CustomWardrobe.lua
 MagiButton.lua
 ShowAllWardrobe.lua
 Titles.lua
@@ -49,6 +53,5 @@ PauldronSystem.lua
 MountShop.lua
 MorphCatalogue.lua
 SaveHubWardrobe.lua
-CustomWardrobe.lua
 SmartDiscovery.lua
 SaveHubPreview.lua

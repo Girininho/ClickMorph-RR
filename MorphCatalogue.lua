@@ -17,8 +17,22 @@ ClickMorphMorphCatalogue.catalogueSystem = {
 }
 
 -- Debug print
+-- SUBSTITUIR a função CatalogueDebugPrint local por esta versão segura:
 local function CatalogueDebugPrint(...)
-    if ClickMorphCustomWardrobe and ClickMorphCustomWardrobe.wardrobeSystem.settings.debugMode then
+    -- Verificação segura para evitar nil access
+    local debugMode = false
+    
+    if ClickMorphCustomWardrobe and 
+       ClickMorphCustomWardrobe.wardrobeSystem and
+       ClickMorphCustomWardrobe.wardrobeSystem.settings then
+        debugMode = ClickMorphCustomWardrobe.wardrobeSystem.settings.debugMode
+    elseif ClickMorphCustomWardrobe and 
+           ClickMorphCustomWardrobe.wardrobeSystem and
+           ClickMorphCustomWardrobe.wardrobeSystem.config then
+        debugMode = ClickMorphCustomWardrobe.wardrobeSystem.config.debugMode
+    end
+    
+    if debugMode then
         local args = {...}
         for i = 1, #args do
             args[i] = tostring(args[i] or "nil")
