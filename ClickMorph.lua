@@ -332,119 +332,124 @@ function CM.MorphMountScrollFrame(frame)
 end
 
 -- Sets
+-- Sets
 function CM.MorphTransmogSet()
-	local morph = CM:CanMorph()
-	if morph and morph.item then
-		-- Ativar bloqueio de tracking
-		CM:SetTrackingBlock(true)
-		
-		local setID = WardrobeCollectionFrame.SetsCollectionFrame.selectedSetID
-		if not setID then
-			CM:PrintChat("No set selected", 1, 1, 0)
-			CM:SetTrackingBlock(false)
-			return
-		end
-		
-		local setInfo = C_TransmogSets.GetSetInfo(setID)
-		if not setInfo then
-			CM:PrintChat("Could not get set info", 1, 1, 0)
-			CM:SetTrackingBlock(false)
-			return
-		end
+    local morph = CM:CanMorph()
+    if not (morph and morph.item) then
+        print("|cffff0000ERROR:|r Could not get morph system")
+        return
+    end
 
-		local sourceIDs = C_TransmogSets.GetAllSourceIDs(setID)
-		if sourceIDs then
-			print("|cff00ff00ClickMorph:|r Found", #sourceIDs, "sources in set")
-			
-			-- CORREÇÃO: Mapear todos os slots que o set usa
-			local setSlots = {}
-			local itemsToApply = {}
-			
-			for i, sourceID in pairs(sourceIDs) do
-				local sourceInfo = C_TransmogCollection.GetSourceInfo(sourceID)
-				if sourceInfo and sourceInfo.itemID then
-					local slotID = C_Transmog.GetSlotForInventoryType(sourceInfo.invType)
-					if slotID then
-						setSlots[slotID] = true
-						
-						-- Guardar informações do item para aplicar
-						table.insert(itemsToApply, {
-							slotID = slotID,
-							itemID = sourceInfo.itemID,
-							itemModID = sourceInfo.itemModID or 0,
-							name = sourceInfo.name or ("Item " .. sourceInfo.itemID),
-							invType = sourceInfo.invType
-						})
-						
-						print("|cffffcc00Debug:|r Slot", slotID, "ItemID:", sourceInfo.itemID, "ModID:", sourceInfo.itemModID or 0, "Name:", sourceInfo.name or "Unknown")
-					end
-				else
-					print("|cffff6666Warning:|r Could not get source info for sourceID", sourceID)
-				end
-			end
-			
-			-- UNDRESS INTELIGENTE - incluindo helmet (slot 1)
-			local morphForUndress = CM:CanMorph(true)
-			if morphForUndress and morphForUndress.item then
-				for slotID in pairs(setSlots) do
-					morphForUndress.item("player", slotID, 0)
-					print("|cffffcc00Undressing slot:|r", slotID, "(", CM.SlotNames[slotID] or "Unknown", ")")
-				end
-				
-				-- Pequeno delay para garantir que undress processou
-				C_Timer.After(0.1, function()
-					-- APLICAR TODAS AS PEÇAS DO SET - INCLUINDO HELMET
-					local appliedCount = 0
-					for _, itemData in ipairs(itemsToApply) do
-						local success = pcall(function()
-							morph.item("player", itemData.slotID, itemData.itemID, itemData.itemModID)
-						end)
-						
-						if success then
-							appliedCount = appliedCount + 1
-							local slotName = CM.SlotNames[itemData.slotID] or ("Slot " .. itemData.slotID)
-							
-							if itemData.itemModID > 0 then
-								print("|cff00ff00Applied:|r", slotName, "->", itemData.itemID .. ":" .. itemData.itemModID, itemData.name)
-							else
-								print("|cff00ff00Applied:|r", slotName, "->", itemData.itemID, itemData.name)
-							end
-						else
-							print("|cffff0000Failed:|r Could not apply", itemData.name, "to slot", itemData.slotID)
-						end
-					end
-					
-					-- Print melhorado
-					local description = setInfo.description or "Normal"
-					CM:PrintChat(format("set -> %s (%s) - Applied %d/%d pieces", setInfo.name, description, appliedCount, #itemsToApply))
-					
-					-- VERIFICAÇÃO ESPECÍFICA PARA HELMET
-					local helmetApplied = false
-					for _, itemData in ipairs(itemsToApply) do
-						if itemData.slotID == 1 then -- Slot 1 = Helmet
-							helmetApplied = true
-							print("|cff00ff00HELMET APPLIED:|r", itemData.name, "(ID:", itemData.itemID, "ModID:", itemData.itemModID, ")")
-							break
-						end
-					end
-					
-					if not helmetApplied then
-						print("|cffff6666WARNING:|r No helmet found in this set")
-					end
-				end)
-			end
-		else
-			CM:PrintChat("Could not get set sources", 1, 1, 0)
-		end
-		
-		-- Desativar bloqueio após operação (com delay maior para permitir aplicação)
-		C_Timer.After(0.5, function()
-			CM:SetTrackingBlock(false)
-		end)
-	else
-		print("|cffff0000ERROR:|r Could not get morph system")
-	end
+    -- Ativar bloqueio de tracking
+    CM:SetTrackingBlock(true)
+
+    local setID = WardrobeCollectionFrame.SetsCollectionFrame.selectedSetID
+    if not setID then
+        CM:PrintChat("No set selected", 1, 1, 0)
+        CM:SetTrackingBlock(false)
+        return
+    end
+
+    local setInfo = C_TransmogSets.GetSetInfo(setID)
+    if not setInfo then
+        CM:PrintChat("Could not get set info", 1, 1, 0)
+        CM:SetTrackingBlock(false)
+        return
+    end
+
+    local sourceIDs = C_TransmogSets.GetAllSourceIDs(setID)
+    if not sourceIDs then
+        CM:PrintChat("Could not get set sources", 1, 1, 0)
+        CM:SetTrackingBlock(false)
+        return
+    end
+
+    print("|cff00ff00ClickMorph:|r Found", #sourceIDs, "sources in set")
+
+    -- Guardar itens por slot
+    local setSlots, itemsToApply, helmetData = {}, {}, nil
+    for _, sourceID in pairs(sourceIDs) do
+        local sourceInfo = C_TransmogCollection.GetSourceInfo(sourceID)
+        if sourceInfo and sourceInfo.itemID then
+            local slotID = C_Transmog.GetSlotForInventoryType(sourceInfo.invType)
+            if slotID then
+                setSlots[slotID] = true
+                local itemData = {
+                    slotID = slotID,
+                    itemID = sourceInfo.itemID,
+                    itemModID = sourceInfo.itemModID or 0,
+                    name = sourceInfo.name or ("Item " .. sourceInfo.itemID),
+                }
+                if slotID == INVSLOT_HEAD then
+                    helmetData = itemData -- separa capacete
+                else
+                    table.insert(itemsToApply, itemData)
+                end
+                if CM.debugSet then
+                    print("Debug: Slot", slotID, "ItemID:", sourceInfo.itemID, 
+                          "ModID:", sourceInfo.itemModID or 0, "Name:", itemData.name)
+                end
+            end
+        else
+            print("|cffff6666Warning:|r Could not get source info for sourceID", sourceID)
+        end
+    end
+
+    -- UNDRESS
+    local morphForUndress = CM:CanMorph(true)
+    if morphForUndress and morphForUndress.item then
+        for slotID in pairs(setSlots) do
+            morphForUndress.item("player", slotID, 0)
+            if CM.debugSet then
+                print("|cffffcc00Undressing slot:|r", slotID, "(", CM.SlotNames[slotID] or "Unknown", ")")
+            end
+        end
+
+        -- Delay pequeno antes de aplicar
+        C_Timer.After(0.1, function()
+            local appliedCount = 0
+
+            -- Aplica tudo menos capacete
+            for _, itemData in ipairs(itemsToApply) do
+                local ok = pcall(function()
+                    morph.item("player", itemData.slotID, itemData.itemID, itemData.itemModID)
+                end)
+                if ok then
+                    appliedCount = appliedCount + 1
+                    if CM.debugSet then
+                        print("|cff00ff00Applied:|r", CM.SlotNames[itemData.slotID] or itemData.slotID,
+                              "->", itemData.itemID, itemData.name)
+                    end
+                end
+            end
+
+            -- Capacete por último
+            if helmetData then
+                C_Timer.After(0.2, function()
+                    local ok = pcall(function()
+                        morph.item("player", helmetData.slotID, helmetData.itemID, helmetData.itemModID)
+                    end)
+                    if ok then
+                        appliedCount = appliedCount + 1
+                        if CM.debugSet then
+                            print("|cff00ff00HELMET APPLIED LAST:|r", helmetData.name, "(ID:", helmetData.itemID, ")")
+                        end
+                    end
+                end)
+            end
+
+            -- Print final
+            local description = setInfo.description or "Normal"
+            CM:PrintChat(format("set -> %s (%s) - Applied %d/%d pieces", 
+                                setInfo.name, description, appliedCount, #itemsToApply + (helmetData and 1 or 0)))
+        end)
+    end
+
+    -- Libera tracking depois
+    C_Timer.After(0.5, function() CM:SetTrackingBlock(false) end)
 end
+
+
 
 -- OPCIONAL: Comando para testar aplicação de helmet individual
 SLASH_CLICKMORPH_TESTHELMET1 = "/cmtesthelmet"
@@ -679,6 +684,17 @@ function CM:Debug()
 	self:PrintChat("Silent Mode: " .. (silentMode and "ON" or "OFF"))
 end
 
+-- Flag global de debug para sets
+CM.debugSet = false
+
+-- Slash command para ativar/desativar
+SLASH_CLICKMORPH_DEBUGSET1 = "/cmdebugset"
+SlashCmdList.CLICKMORPH_DEBUGSET = function()
+    CM.debugSet = not CM.debugSet
+    print("|cff00ff00ClickMorph:|r Set debug", CM.debugSet and "ON" or "OFF")
+end
+
+
 -- Commands
 SLASH_CLICKMORPH_DEBUG1 = "/cmdebug"
 SlashCmdList.CLICKMORPH_DEBUG = function()
@@ -712,7 +728,7 @@ end)
 -- Variável para garantir que hooks só sejam aplicados uma vez
 local hooksInitialized = false
 
--- Função para re-inicializar hooks do wardrobe
+-- Função para re-inicializar hooks do wardrobe (corrigido: usar HookScript)
 function CM:ReinitializeWardrobeHooks()
     if not C_AddOns.IsAddOnLoaded("Blizzard_Collections") then
         print("|cffff6666ClickMorph:|r Blizzard_Collections not loaded yet")
@@ -720,23 +736,18 @@ function CM:ReinitializeWardrobeHooks()
     end
     
     print("|cff00ff00ClickMorph:|r Re-initializing wardrobe hooks...")
-    
+
     -- Hook para SETS do wardrobe (Alt+Shift+Click)
     if WardrobeCollectionFrame and WardrobeCollectionFrame.SetsCollectionFrame then
         local setsFrame = WardrobeCollectionFrame.SetsCollectionFrame
-        
         if setsFrame.Model then
-            -- Limpar hooks antigos
-            setsFrame.Model:SetScript("OnMouseUp", nil)
-            
-            -- Aplicar novo hook
-            setsFrame.Model:SetScript("OnMouseUp", function(self, button)
+            -- Usar HookScript para não quebrar o drag do modelo
+            setsFrame.Model:HookScript("OnMouseUp", function(self, button)
                 if button == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
                     print("|cff00ff00ClickMorph:|r Alt+Shift+Click detected on wardrobe set!")
                     CM.MorphTransmogSet()
                 end
             end)
-            
             print("|cff00ff00ClickMorph:|r Wardrobe Sets hook applied successfully")
         else
             print("|cffff6666ClickMorph:|r Wardrobe Sets Model not found")
@@ -748,26 +759,19 @@ function CM:ReinitializeWardrobeHooks()
     -- Hook para ITEMS individuais do wardrobe (Alt+Shift+Click)
     if WardrobeCollectionFrame and WardrobeCollectionFrame.ItemsCollectionFrame then
         local itemsFrame = WardrobeCollectionFrame.ItemsCollectionFrame
-        
         if itemsFrame.Models then
             local modelsHooked = 0
             for i, model in pairs(itemsFrame.Models) do
-                if model and model.SetScript then
-                    -- Limpar hook antigo
-                    model:SetScript("OnMouseUp", nil)
-                    
-                    -- Aplicar novo hook
-                    model:SetScript("OnMouseUp", function(self, button)
+                if model then
+                    model:HookScript("OnMouseUp", function(self, button)
                         if button == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
                             print("|cff00ff00ClickMorph:|r Alt+Shift+Click detected on wardrobe item!")
                             CM.MorphTransmogItem(self)
                         end
                     end)
-                    
                     modelsHooked = modelsHooked + 1
                 end
             end
-            
             print("|cff00ff00ClickMorph:|r Wardrobe Items hooks applied (" .. modelsHooked .. " models)")
         else
             print("|cffff6666ClickMorph:|r Wardrobe Items Models not found")
@@ -778,6 +782,7 @@ function CM:ReinitializeWardrobeHooks()
     
     return true
 end
+
 
 -- Função principal de inicialização de hooks - VERSÃO CORRIGIDA
 function InitializeHooks()
