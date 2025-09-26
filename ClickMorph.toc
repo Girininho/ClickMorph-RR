@@ -52,6 +52,5 @@ MountCustomizer.lua
 PauldronSystem.lua
 MountShop.lua
 MorphCatalogue.lua
-SaveHubWardrobe.lua
 SmartDiscovery.lua
 SaveHubPreview.lua
