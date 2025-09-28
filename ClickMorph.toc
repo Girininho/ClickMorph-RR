@@ -22,6 +22,9 @@ ClickMorph.lua
 Database.lua
 Commands.lua
 
+# Third-Party Integration (NOVO - DEPOIS DO CORE)
+ThirdPartyHooks.lua
+
 # iMorph Integration
 iMorph\iMorphV1.lua
 iMorph\iMorphLua.lua
