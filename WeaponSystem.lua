@@ -9,6 +9,7 @@ ClickMorphWeapon.config = {
 }
 
 ClickMorphWeapon.processing = false
+ClickMorphWeapon.lastClickedModel = nil -- Guardar último modelo clicado
 
 local function DebugPrint(...)
     if ClickMorphWeapon.config.debugMode then
@@ -20,58 +21,80 @@ local function DebugPrint(...)
     end
 end
 
--- Pegar versão usando lógica do Wardrobe (igual PauldronSystem)
+-- Pegar versão do item clicado (USA ITEMLINK quando disponível)
+function ClickMorphWeapon.GetVersionFromItemLink(itemID, itemLink)
+    if not itemLink then return 0 end
+    
+    DebugPrint("Trying GetVersionFromItemLink for:", itemLink)
+    
+    local appearanceID, sourceID = C_TransmogCollection.GetItemInfo(itemLink)
+    if sourceID then
+        local sourceInfo = C_TransmogCollection.GetSourceInfo(sourceID)
+        if sourceInfo and sourceInfo.itemID == itemID then
+            DebugPrint("SUCCESS via ItemLink - ModID:", sourceInfo.itemModID)
+            return sourceInfo.itemModID or 0
+        end
+    end
+    
+    return 0
+end
+
+-- Pegar versão do Wardrobe (USA MODELO CLICADO)
 function ClickMorphWeapon.GetVersionFromWardrobe(itemID)
-    DebugPrint("WARDROBE VERSION DETECTION for itemID:", itemID)
+    DebugPrint("VERSION DETECTION for itemID:", itemID)
     
-    -- Método 1: Modelo ativo no Wardrobe
-    local wardrobeFrame = WardrobeCollectionFrame
-    if wardrobeFrame and wardrobeFrame.ItemsCollectionFrame then
-        for _, model in pairs(wardrobeFrame.ItemsCollectionFrame.Models) do
-            if model:IsShown() and model:IsMouseOver() and model.visualInfo then
-                local visualID = model.visualInfo.visualID
-                DebugPrint("Found active model - visualID:", visualID)
-                
-                local sources = C_TransmogCollection.GetAllAppearanceSources(visualID)
-                
-                if sources and #sources > 0 then
-                    local sourceInfo = C_TransmogCollection.GetSourceInfo(sources[1])
-                    if sourceInfo and sourceInfo.itemID == itemID then
-                        local detectedModID = sourceInfo.itemModID or 0
-                        DebugPrint("WARDROBE SUCCESS: itemID matches, modID:", detectedModID)
-                        return detectedModID
-                    end
+    -- Método 1: Usar o último modelo clicado (MAIS PRECISO)
+    if ClickMorphWeapon.lastClickedModel and ClickMorphWeapon.lastClickedModel.visualInfo then
+        local visualID = ClickMorphWeapon.lastClickedModel.visualInfo.visualID
+        local sources = C_TransmogCollection.GetAllAppearanceSources(visualID)
+        
+        if sources and #sources > 0 then
+            local sourceInfo = C_TransmogCollection.GetSourceInfo(sources[1])
+            if sourceInfo and sourceInfo.itemID == itemID then
+                local modID = sourceInfo.itemModID or 0
+                DebugPrint("✅ LAST CLICKED MODEL - ItemID:", itemID, "ModID:", modID, "VisualID:", visualID)
+                return modID
+            else
+                DebugPrint("Last clicked model itemID mismatch - expected:", itemID, "got:", sourceInfo and sourceInfo.itemID)
+            end
+        end
+    else
+        DebugPrint("No lastClickedModel or visualInfo")
+    end
+    
+    -- Método 2: Fallback - procurar nos modelos visíveis
+    DebugPrint("Fallback: Searching visible models...")
+    
+    local wardrobeFrame = BetterWardrobeCollectionFrame or WardrobeCollectionFrame
+    
+    if not wardrobeFrame or not wardrobeFrame.ItemsCollectionFrame then
+        DebugPrint("No wardrobe frame found")
+        return 0
+    end
+    
+    local itemsFrame = wardrobeFrame.ItemsCollectionFrame
+    if not itemsFrame.Models then
+        DebugPrint("No models in ItemsCollectionFrame")
+        return 0
+    end
+    
+    for _, model in pairs(itemsFrame.Models) do
+        if model.visualInfo then
+            local visualID = model.visualInfo.visualID
+            local sources = C_TransmogCollection.GetAllAppearanceSources(visualID)
+            
+            if sources and #sources > 0 then
+                local sourceInfo = C_TransmogCollection.GetSourceInfo(sources[1])
+                if sourceInfo and sourceInfo.itemID == itemID then
+                    local modID = sourceInfo.itemModID or 0
+                    DebugPrint("FALLBACK SUCCESS: Found in visible models - ItemID:", itemID, "ModID:", modID, "VisualID:", visualID)
+                    return modID
                 end
             end
         end
     end
     
-    -- Método 2: Fallback - buscar por itemID
-    DebugPrint("FALLBACK: Searching sourceInfo by itemID:", itemID)
-    
-    for categoryID = 1, 20 do
-        local appearances = C_TransmogCollection.GetCategoryAppearances(categoryID)
-        if appearances then
-            for _, appearance in ipairs(appearances) do
-                if appearance.visualID then
-                    local sources = C_TransmogCollection.GetAllAppearanceSources(appearance.visualID)
-                    if sources then
-                        for _, source in ipairs(sources) do
-                            local sourceID = type(source) == "table" and source.sourceID or source
-                            local sourceInfo = C_TransmogCollection.GetSourceInfo(sourceID)
-                            if sourceInfo and sourceInfo.itemID == itemID then
-                                local modID = sourceInfo.itemModID or 0
-                                DebugPrint("FALLBACK SUCCESS: Found itemID in category", categoryID, "modID:", modID)
-                                return modID
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    DebugPrint("WARDROBE DETECTION FAILED: No version found for itemID", itemID)
+    DebugPrint("FAILED: ItemID not found")
     return 0
 end
 
@@ -186,8 +209,17 @@ function ClickMorphWeapon.InstallHybridHook()
                         
                         ClickMorphWeapon.processing = true
                         
-                        -- CAPTURAR VERSÃO
-                        local correctVersion = ClickMorphWeapon.GetVersionFromWardrobe(itemID)
+                        -- SALVAR O ITEM COMO "ÚLTIMO CLICADO" para detecção posterior
+                        ClickMorphWeapon.lastClickedItemID = itemID
+                        ClickMorphWeapon.lastClickedItemLink = itemLink
+                        
+                        -- TENTAR CAPTURAR VERSÃO DO ITEMLINK PRIMEIRO
+                        local correctVersion = ClickMorphWeapon.GetVersionFromItemLink(itemID, itemLink)
+                        
+                        -- Se falhou, tentar pelo Wardrobe
+                        if correctVersion == 0 then
+                            correctVersion = ClickMorphWeapon.GetVersionFromWardrobe(itemID)
+                        end
                         
                         if isShiftOnly then
                             DebugPrint("Executing SHIFT ONLY (Off Hand) with version:", correctVersion)
@@ -237,13 +269,35 @@ function ClickMorphWeapon.InstallHybridHook()
                 
                 ClickMorphWeapon.processing = true
                 
-                local finalVersion = itemModID or 0
-                DebugPrint("Using morpher detected version:", finalVersion)
-                
-                ClickMorphWeapon.ExecuteWeaponCommand(itemID, "mainhand", finalVersion)
-                
-                C_Timer.After(0.5, function()
-                    ClickMorphWeapon.processing = false
+                -- DELAY para OnMouseDown executar primeiro
+                C_Timer.After(0.05, function()
+                    -- Tentar pegar itemLink
+                    local itemLink = select(2, C_Item.GetItemInfo(itemID))
+                    
+                    -- Método 1: Tentar via itemLink primeiro
+                    local finalVersion = 0
+                    if itemLink then
+                        finalVersion = ClickMorphWeapon.GetVersionFromItemLink(itemID, itemLink)
+                        DebugPrint("ItemLink detection result:", finalVersion)
+                    end
+                    
+                    -- Método 2: Usar o modID que veio do morpher
+                    if finalVersion == 0 then
+                        finalVersion = itemModID or 0
+                        DebugPrint("Using morpher detected version:", finalVersion)
+                    end
+                    
+                    -- Método 3: Se ainda é 0, tentar detecção manual do Wardrobe
+                    if finalVersion == 0 then
+                        DebugPrint("Version still 0, trying manual detection...")
+                        finalVersion = ClickMorphWeapon.GetVersionFromWardrobe(itemID)
+                    end
+                    
+                    ClickMorphWeapon.ExecuteWeaponCommand(itemID, "mainhand", finalVersion)
+                    
+                    C_Timer.After(0.5, function()
+                        ClickMorphWeapon.processing = false
+                    end)
                 end)
                 
                 return -- BLOQUEAR execução original
@@ -351,6 +405,53 @@ SlashCmdList.CLICKMORPH_WEAPON = function(msg)
     end
 end
 
+-- Instalar hooks nos modelos do Wardrobe
+function ClickMorphWeapon.InstallModelHooks()
+    local wardrobeFrame = BetterWardrobeCollectionFrame or WardrobeCollectionFrame
+    if not wardrobeFrame or not wardrobeFrame.ItemsCollectionFrame then
+        DebugPrint("No wardrobe frame found for model hooks")
+        return 0
+    end
+    
+    local itemsFrame = wardrobeFrame.ItemsCollectionFrame
+    if not itemsFrame.Models then
+        DebugPrint("No models in ItemsCollectionFrame")
+        return 0
+    end
+    
+    local hooked = 0
+    for _, model in pairs(itemsFrame.Models) do
+        if model and not model.WeaponSystemClickHooked then
+            -- Hook SetItemTransmogInfo (chamada quando modelo é clicado)
+            if model.SetItemTransmogInfo then
+                hooksecurefunc(model, "SetItemTransmogInfo", function(self, info)
+                    if info and info.appearanceID then
+                        ClickMorphWeapon.lastClickedAppearanceID = info.appearanceID
+                        ClickMorphWeapon.lastClickedModel = self
+                        DebugPrint("SetItemTransmogInfo - AppearanceID:", info.appearanceID)
+                    end
+                end)
+            end
+            
+            -- Fallback: Hook OnMouseDown
+            if model.SetScript then
+                model:HookScript("OnMouseDown", function(self)
+                    ClickMorphWeapon.lastClickedModel = self
+                    if self.visualInfo then
+                        DebugPrint("OnMouseDown - VisualID:", self.visualInfo.visualID)
+                    end
+                end)
+            end
+            
+            model.WeaponSystemClickHooked = true
+            hooked = hooked + 1
+        end
+    end
+    
+    DebugPrint("Hooked", hooked, "models for click detection")
+    return hooked
+end
+
 -- Inicialização
 local function Initialize()
     if not CM or not CM.CanMorph then
@@ -367,6 +468,22 @@ local function Initialize()
     end
     
     DebugPrint("Initializing Hybrid Weapon System...")
+    
+    -- Instalar hooks nos modelos (se já existirem)
+    ClickMorphWeapon.InstallModelHooks()
+    
+    -- Hook para reinstalar quando Wardrobe abrir
+    local wardrobeFrame = BetterWardrobeCollectionFrame or WardrobeCollectionFrame
+    if wardrobeFrame and not wardrobeFrame.WeaponSystemOnShowHooked then
+        wardrobeFrame:HookScript("OnShow", function()
+            DebugPrint("Wardrobe opened - reinstalling model hooks")
+            C_Timer.After(0.5, function()
+                ClickMorphWeapon.InstallModelHooks()
+            end)
+        end)
+        wardrobeFrame.WeaponSystemOnShowHooked = true
+        DebugPrint("OnShow hook installed on Wardrobe")
+    end
     
     if ClickMorphWeapon.InstallHybridHook() then
         print("|cff00ff00ClickMorph Weapon - Hybrid System|r loaded!")

@@ -1,6 +1,6 @@
--- CLICKMORPH ENHANCED - VERSÃO COMPLETA CORRIGIDA
--- Sistema focado APENAS no workflow de itens individuais
--- CORREÇÃO: Agora usa slot real do equipamento, não posição da UI
+-- ShowAllWardrobe.lua - UPDATED VERSION
+-- Sistema completo para BetterWardrobe com Alt+Shift+Click
+-- SUBSTITUA O ARQUIVO ShowAllWardrobe.lua INTEIRO POR ESTE
 
 ClickMorphSimple = {}
 local S = ClickMorphSimple
@@ -86,7 +86,7 @@ function S:ExtractItemsFromUI()
     local selectedSetID = BetterWardrobeCollectionFrame.SetsCollectionFrame.selectedSetID
     if not selectedSetID then return nil end
     
-    -- Primeiro método: Pegar do set via API do WoW (mais preciso para modID)
+    -- Método principal: Pegar do set via API do WoW (mais preciso para modID)
     local sourceIDs = C_TransmogSets.GetAllSourceIDs(selectedSetID)
     if sourceIDs then
         local items = {}
@@ -115,134 +115,80 @@ function S:ExtractItemsFromUI()
         end
     end
     
-    -- Método fallback: Procurar na UI (caso API falhe)
-    local detailsFrame = BetterWardrobeCollectionFrame.SetsCollectionFrame.DetailsFrame
-    if not detailsFrame then
-        return nil
-    end
-    
-    local items = {}
-    
-    -- Procurar pelos frames de item no DetailsFrame
-    if detailsFrame.itemFrames then
-        for i, itemFrame in pairs(detailsFrame.itemFrames) do
-            if itemFrame and itemFrame:IsVisible() then
-                local itemID = itemFrame.itemID or itemFrame.id
-                local itemModID = itemFrame.itemModID or 0
-                
-                if itemID then
-                    local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(itemID)
-                    local realSlot = self.EquipSlotToiMorph[equipLoc]
-                    
-                    if realSlot then
-                        items[realSlot] = {
-                            uiSlot = i,
-                            realSlot = realSlot,
-                            itemID = itemID,
-                            itemModID = itemModID,
-                            equipLoc = equipLoc,
-                            frame = itemFrame
-                        }
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Se não encontrou, procurar recursivamente
-    if next(items) == nil then
-        local function FindItemFrames(parent, depth)
-            if not parent or depth > 5 then return end
-            
-            for _, child in ipairs({parent:GetChildren()}) do
-                if child.itemID then
-                    local itemID = child.itemID
-                    local itemModID = child.itemModID or 0
-                    local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(itemID)
-                    local realSlot = S.EquipSlotToiMorph[equipLoc]
-                    
-                    if realSlot then
-                        items[realSlot] = {
-                            uiSlot = #items + 1,
-                            realSlot = realSlot,
-                            itemID = itemID,
-                            itemModID = itemModID,
-                            equipLoc = equipLoc,
-                            frame = child
-                        }
-                    end
-                end
-                FindItemFrames(child, depth + 1)
-            end
-        end
-        
-        FindItemFrames(detailsFrame, 0)
-    end
-    
-    return next(items) and items or nil
+    return nil
 end
 
 -------------------------------------------------
--- WORKFLOW PRINCIPAL - APENAS ITENS INDIVIDUAIS
+-- WORKFLOW PRINCIPAL - VERSÃO CORRIGIDA
 -------------------------------------------------
 function S:ApplyCleanWorkflow()
-    -- 1. Reset completo primeiro
-    if iMorphChatHandler then
-        pcall(iMorphChatHandler, ".reset")
+    -- Verificar se iMorph tá disponível
+    if not (IMorphInfo or Morph) then
+        print("|cffff0000ClickMorph:|r iMorph not loaded or not injected")
+        return
+    end
+
+    -- Extrair info do set
+    local info = self:ExtractRealInfo()
+    if not info then
+        print("|cffff0000ClickMorph:|r No set selected")
+        return
     end
     
-    -- 2. Aguardar reset e aplicar itens
-    C_Timer.After(0.5, function()
-        -- Extrair info do set
-        local info = self:ExtractRealInfo()
-        if not info then
-            print("|cffff0000ClickMorph:|r Failed to extract set info")
-            return
+    -- Detectar variante para display
+    local variantName = "Normal"
+    if info.description then
+        local desc = info.description:lower()
+        if desc:find("heroic") or desc:find("heroico") then
+            variantName = "Heroic"
+        elseif desc:find("mythic") or desc:find("mítico") then
+            variantName = "Mythic"
+        elseif desc:find("elite") then
+            variantName = "Elite"
         end
-        
-        -- Detectar variante para display
-        local variantName = "Normal"
-        if info.description then
-            local desc = info.description:lower()
-            if desc:find("heroic") or desc:find("heroico") then
-                variantName = "Heroic"
-            elseif desc:find("mythic") or desc:find("mítico") then
-                variantName = "Mythic"
-            elseif desc:find("elite") then
-                variantName = "Elite"
-            end
-        end
-        
-        -- Extrair itens da UI
-        local uiItems = self:ExtractItemsFromUI()
-        if not uiItems then
-            print("|cffff0000ClickMorph:|r No items found in set")
-            return
-        end
-        
-        -- Aplicar cada item com slot e modID corretos
-        local successCount = 0
-        local totalItems = 0
-        
-        for realSlot, item in pairs(uiItems) do
+    end
+    
+    -- Extrair itens da UI
+    local uiItems = self:ExtractItemsFromUI()
+    if not uiItems then
+        print("|cffff0000ClickMorph:|r No items found in set")
+        return
+    end
+    
+    -- Preparar comandos
+    local commands = {}
+    
+    -- Reset primeiro
+    table.insert(commands, ".reset")
+    
+    -- Undress slots que o set vai usar
+    for realSlot, _ in pairs(uiItems) do
+        table.insert(commands, string.format(".item %d 0", realSlot))
+    end
+    
+    -- Adicionar comandos de morph
+    local totalItems = 0
+    for realSlot, item in pairs(uiItems) do
+        if item.itemID then
             totalItems = totalItems + 1
-            if item.itemID then
-                -- Usar modID se disponível, senão usar versionID
-                local modID = item.itemModID or info.versionID
-                local command = ".item " .. item.realSlot .. " " .. item.itemID .. " " .. modID
-                
-                if iMorphChatHandler then
-                    local ok = pcall(iMorphChatHandler, command)
-                    if ok then
-                        successCount = successCount + 1
-                    end
-                end
+            local modID = item.itemModID or info.versionID
+            local cmd = string.format(".item %d %d %d", item.realSlot, item.itemID, modID)
+            table.insert(commands, cmd)
+            
+            if S.debug then
+                print("|cff00ccffDebug:|r", cmd)
             end
         end
-        
-        -- Resultado final
-        if successCount > 0 then
-            print("|cff00ff00ClickMorph:|r Applied " .. info.name .. " [" .. variantName .. "] - " .. successCount .. "/" .. totalItems .. " items")
+    end
+    
+    -- Executar comandos sequencialmente
+    local commandIndex = 1
+    local successCount = 0
+    
+    local function ExecuteNextCommand()
+        if commandIndex > #commands then
+            print(string.format("|cff00ff00ClickMorph:|r Applied %s [%s] - %d items", 
+                info.name, variantName, totalItems))
             
             -- Salvar para referência
             S.lastApplied = {
@@ -250,20 +196,37 @@ function S:ApplyCleanWorkflow()
                 name = info.name,
                 variant = variantName,
                 versionID = info.versionID,
-                itemsApplied = successCount,
-                method = "clean item workflow",
+                itemsApplied = totalItems,
                 timestamp = GetTime()
             }
-        else
-            print("|cffff0000ClickMorph:|r Failed to apply any items from set")
+            return
         end
-    end)
+        
+        local cmd = commands[commandIndex]
+        
+        -- Usar ChatFrame1EditBox (método correto do iMorph)
+        ChatFrame1EditBox:SetText(cmd)
+        ChatEdit_SendText(ChatFrame1EditBox, 0)
+        
+        commandIndex = commandIndex + 1
+        C_Timer.After(0.05, ExecuteNextCommand) -- Delay entre comandos
+    end
+    
+    ExecuteNextCommand()
 end
 
 -------------------------------------------------
--- HOOK LIMPO - APENAS WORKFLOW
+-- HOOK LIMPO - BETTERWARDROBE + FALLBACK
 -------------------------------------------------
+local hookAttempts = 0
+local maxHookAttempts = 10
+
+-- SUBSTITUA a função SetupCleanHook() no ShowAllWardrobe.lua
+
 local function SetupCleanHook()
+    hookAttempts = hookAttempts + 1
+    
+    -- Tentar BetterWardrobe primeiro
     if BetterWardrobeCollectionFrame and 
        BetterWardrobeCollectionFrame.SetsCollectionFrame and
        BetterWardrobeCollectionFrame.SetsCollectionFrame.Model then
@@ -272,12 +235,72 @@ local function SetupCleanHook()
         if not model._CleanHook then
             model:HookScript("OnMouseUp", function(self, button)
                 if button == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
-                    S:ApplyCleanWorkflow()
+                    -- VERIFICAÇÃO CRÍTICA: Só processar se estiver na aba de SETS
+                    local setsFrame = BetterWardrobeCollectionFrame.SetsCollectionFrame
+                    
+                    -- Verificar se a aba de Sets está visível E tem set selecionado
+                    if setsFrame:IsVisible() and setsFrame.selectedSetID then
+                        if S.debug then
+                            print("|cff00ccffDebug:|r Alt+Shift+Click on BetterWardrobe - Transmog Set!")
+                        end
+                        S:ApplyCleanWorkflow()
+                    else
+                        -- Está na aba de Items, não fazer nada (deixar ClickMorph processar)
+                        if S.debug then
+                            print("|cff00ccffDebug:|r Alt+Shift+Click ignored - not on Sets tab or no set selected")
+                        end
+                    end
                 end
             end)
             model._CleanHook = true
+            print("|cff00ff00ClickMorph:|r BetterWardrobe Sets hook OK (Alt+Shift+Click)")
         end
+        return true
     end
+    
+    -- Fallback: Wardrobe padrão
+    if WardrobeCollectionFrame and 
+       WardrobeCollectionFrame.SetsCollectionFrame and
+       WardrobeCollectionFrame.SetsCollectionFrame.Model then
+        
+        local model = WardrobeCollectionFrame.SetsCollectionFrame.Model
+        if not model._CleanHook then
+            model:HookScript("OnMouseUp", function(self, button)
+                if button == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
+                    -- VERIFICAÇÃO: Só processar se tem set selecionado
+                    local setsFrame = WardrobeCollectionFrame.SetsCollectionFrame
+                    local selectedSetID = setsFrame.selectedSetID
+                    
+                    if selectedSetID and setsFrame:IsVisible() then
+                        -- Temporariamente setar no BetterWardrobe pra função funcionar
+                        if not BetterWardrobeCollectionFrame then
+                            BetterWardrobeCollectionFrame = {
+                                SetsCollectionFrame = {
+                                    selectedSetID = selectedSetID
+                                }
+                            }
+                        end
+                        S:ApplyCleanWorkflow()
+                    end
+                end
+            end)
+            model._CleanHook = true
+            print("|cff00ff00ClickMorph:|r Default Wardrobe Sets hook OK (Alt+Shift+Click)")
+        end
+        return true
+    end
+    
+    -- Se não conseguiu e ainda tem tentativas, tentar novamente
+    if hookAttempts < maxHookAttempts then
+        C_Timer.After(1, SetupCleanHook)
+        if S.debug then
+            print("|cff00ccffDebug:|r Hook attempt", hookAttempts, "- will retry in 1s")
+        end
+    else
+        print("|cffffff00ClickMorph:|r Could not auto-hook. Use /cmrehook after opening wardrobe")
+    end
+    
+    return false
 end
 
 -------------------------------------------------
@@ -309,10 +332,9 @@ function S:ShowLastApplied()
 end
 
 function S:QuickReset()
-    if iMorphChatHandler then
-        pcall(iMorphChatHandler, ".reset")
-        print("|cff00ff00ClickMorph:|r Reset applied")
-    end
+    ChatFrame1EditBox:SetText(".reset")
+    ChatEdit_SendText(ChatFrame1EditBox, 0)
+    print("|cff00ff00ClickMorph:|r Reset applied")
 end
 
 -------------------------------------------------
@@ -338,28 +360,6 @@ SlashCmdList.CLICKMORPH_RESET = function()
     ClickMorphSimple:QuickReset()
 end
 
-SLASH_CLICKMORPH_EXTRACT1 = "/cmextract"
-SlashCmdList.CLICKMORPH_EXTRACT = function()
-    ClickMorphSimple:ExtractItemsFromUI()
-end
-
-SLASH_CLICKMORPH_TESTSLOT1 = "/cmtestslot"
-SlashCmdList.CLICKMORPH_TESTSLOT = function(itemID)
-    itemID = tonumber(itemID)
-    if not itemID then
-        print("Usage: /cmtestslot <itemID>")
-        return
-    end
-    local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(itemID)
-    local realSlot = ClickMorphSimple.EquipSlotToiMorph[equipLoc]
-    print("ItemID " .. itemID .. " -> EquipLoc: " .. (equipLoc or "nil") .. " -> Slot: " .. (realSlot or "nil"))
-    
-    -- Teste aplicação direta
-    if realSlot then
-        print("Test command: .item " .. realSlot .. " " .. itemID)
-    end
-end
-
 SLASH_CLICKMORPH_DEBUGSET1 = "/cmdebugset"
 SlashCmdList.CLICKMORPH_DEBUGSET = function()
     print("|cff00ff00=== DEBUG SET ITEMS ===|r")
@@ -377,7 +377,9 @@ end
 
 SLASH_CLICKMORPH_TESTSOURCE1 = "/cmtestsource"
 SlashCmdList.CLICKMORPH_TESTSOURCE = function()
-    local selectedSetID = BetterWardrobeCollectionFrame.SetsCollectionFrame.selectedSetID
+    local selectedSetID = BetterWardrobeCollectionFrame and 
+                          BetterWardrobeCollectionFrame.SetsCollectionFrame and
+                          BetterWardrobeCollectionFrame.SetsCollectionFrame.selectedSetID
     if not selectedSetID then
         print("No set selected")
         return
@@ -395,9 +397,44 @@ SlashCmdList.CLICKMORPH_TESTSOURCE = function()
     end
 end
 
--- Auto-setup do hook limpo
-C_Timer.After(3, SetupCleanHook)
+SLASH_CLICKMORPH_TOGGLEDEBUG1 = "/cmtoggledebug"
+SlashCmdList.CLICKMORPH_TOGGLEDEBUG = function()
+    S.debug = not S.debug
+    print("|cff00ff00ClickMorph:|r Debug mode", S.debug and "ON" or "OFF")
+end
 
-print("|cff00ff00ClickMorph Enhanced - Clean Version loaded!|r")
-print("Commands: /cmclean, /cmdebug, /cmlast, /cmreset")
+SLASH_CLICKMORPH_REHOOK1 = "/cmrehook"
+SlashCmdList.CLICKMORPH_REHOOK = function()
+    print("|cff00ff00ClickMorph:|r Manually applying hook...")
+    hookAttempts = 0 -- Reset counter
+    SetupCleanHook()
+end
+
+-- Sistema de inicialização inteligente
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("ADDON_LOADED")
+initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+initFrame:SetScript("OnEvent", function(self, event, addonName)
+    if event == "ADDON_LOADED" then
+        if addonName == "Blizzard_Collections" then
+            -- Collections addon carregou, tentar hook
+            C_Timer.After(0.5, SetupCleanHook)
+        elseif addonName == "BetterWardrobe" then
+            -- BetterWardrobe carregou, tentar hook
+            C_Timer.After(1, SetupCleanHook)
+        end
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Player entrou no mundo, tentar hook após delay
+        C_Timer.After(3, SetupCleanHook)
+        -- Tentar novamente após 10s (pra garantir)
+        C_Timer.After(10, SetupCleanHook)
+    end
+end)
+
+-- Tentativa imediata (caso já esteja carregado)
+C_Timer.After(1, SetupCleanHook)
+
+print("|cff00ff00ClickMorph Enhanced - ShowAllWardrobe.lua loaded!|r")
+print("Commands: /cmclean, /cmdebug, /cmlast, /cmreset, /cmdebugset")
 print("Use Alt+Shift+Click on BetterWardrobe sets!")

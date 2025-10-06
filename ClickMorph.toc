@@ -53,7 +53,9 @@ DruidForms.lua
 PetZone.lua
 MountCustomizer.lua
 PauldronSystem.lua
+WeaponSystem.lua
 MountShop.lua
 MorphCatalogue.lua
 SmartDiscovery.lua
 SaveHubPreview.lua
+ScanMouse.lua

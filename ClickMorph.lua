@@ -477,75 +477,85 @@ SlashCmdList.CLICKMORPH_TESTHELMET = function(arg)
 		print("|cffff0000Test Helmet:|r Morph system not available")
 	end
 end
-
+CM.lastClickedModel = nil
 -- Individual transmog items with variant detection
 function CM.MorphTransmogItem(frame)
-	-- Ativar bloqueio de tracking
-	CM:SetTrackingBlock(true)
-	
-	local loc = WardrobeCollectionFrame.ItemsCollectionFrame.transmogLocation
-	local visualID = frame.visualInfo.visualID
+    CM:SetTrackingBlock(true)
+    
+    local loc = WardrobeCollectionFrame.ItemsCollectionFrame.transmogLocation
+    
+    -- MUDANÇA: Pegar visualID do lastClickedModel (se disponível) ou do frame
+    local visualID = nil
+    if CM.lastClickedModel and CM.lastClickedModel.visualInfo then
+        visualID = CM.lastClickedModel.visualInfo.visualID
+    elseif frame.visualInfo then
+        visualID = frame.visualInfo.visualID
+    end
 
-	if loc:IsAppearance() then
-		local sources = C_TransmogCollection.GetAllAppearanceSources(visualID)
-		
-		if sources and #sources > 0 then
-			local sourceInfo = C_TransmogCollection.GetSourceInfo(sources[1])
-			if sourceInfo then
-				local itemID = sourceInfo.itemID
-				local itemModID = sourceInfo.itemModID or 0
-				
-				local morph = CM:CanMorph()
-				if morph and morph.item then
-					local slotID = C_Transmog.GetSlotForInventoryType(sourceInfo.invType)
-					if slotID then
-						slotID = CM:GetDualWieldSlot(slotID)
-						
-						morph.item("player", slotID, itemID, itemModID)
-						
-						if itemModID > 0 then
-							CM:PrintChat(format("%s -> %d:%d %s", 
-								CM.SlotNames[slotID], itemID, itemModID, sourceInfo.name))
-						else
-							CM:PrintChat(format("%s -> %d %s", 
-								CM.SlotNames[slotID], itemID, sourceInfo.name))
-						end
-					end
-				end
-			end
-		end
-	elseif loc:IsIllusion() then
-		local slotToName = {
-			[16] = "MainHandSlot",
-			[17] = "SecondaryHandSlot"
-		}
-		
-		local slotName = slotToName[loc.slotID]
-		if slotName then
-			local slotID = GetInventorySlotInfo(slotName)
-			local enchantSlot = (slotID == 16) and 1 or 2
-			
-			local morph = CM:CanMorph()
-			if morph and morph.enchant then
-				morph.enchant("player", enchantSlot, visualID)
-				local enchantName = C_TransmogCollection.GetIllusionStrings(frame.visualInfo.sourceID)
-				if enchantName then
-					-- Extrair só o nome antes do [
-					enchantName = enchantName:match("([^%[]+)") or enchantName
-					CM:PrintChat(format("enchant -> %s", enchantName))
-				else
-					CM:PrintChat(format("enchant -> applied (visual %d)", visualID))
-				end
-			end
-		else
-			CM:PrintChat("Unsupported enchant slot: " .. tostring(loc.slotID))
-		end
-	end
-	
-	-- Desativar bloqueio após operação
-	C_Timer.After(0.3, function()
-		CM:SetTrackingBlock(false)
-	end)
+    if not visualID then
+        CM:SetTrackingBlock(false)
+        return
+    end
+
+    if loc:IsAppearance() then
+        local sources = C_TransmogCollection.GetAllAppearanceSources(visualID)
+        
+        if sources and #sources > 0 then
+            local sourceInfo = C_TransmogCollection.GetSourceInfo(sources[1])
+            if sourceInfo then
+                local itemID = sourceInfo.itemID
+                -- ESTA LINHA JÁ PEGA O MODID CORRETO DO VISUALID CLICADO
+                local itemModID = sourceInfo.itemModID or 0
+                
+                local morph = CM:CanMorph()
+                if morph and morph.item then
+                    local slotID = C_Transmog.GetSlotForInventoryType(sourceInfo.invType)
+                    if slotID then
+                        slotID = CM:GetDualWieldSlot(slotID)
+                        
+                        morph.item("player", slotID, itemID, itemModID)
+                        
+                        if itemModID > 0 then
+                            CM:PrintChat(format("%s -> %d:%d %s", 
+                                CM.SlotNames[slotID], itemID, itemModID, sourceInfo.name))
+                        else
+                            CM:PrintChat(format("%s -> %d %s", 
+                                CM.SlotNames[slotID], itemID, sourceInfo.name))
+                        end
+                    end
+                end
+            end
+        end
+    elseif loc:IsIllusion() then
+        local slotToName = {
+            [16] = "MainHandSlot",
+            [17] = "SecondaryHandSlot"
+        }
+        
+        local slotName = slotToName[loc.slotID]
+        if slotName then
+            local slotID = GetInventorySlotInfo(slotName)
+            local enchantSlot = (slotID == 16) and 1 or 2
+            
+            local morph = CM:CanMorph()
+            if morph and morph.enchant then
+                morph.enchant("player", enchantSlot, visualID)
+                local enchantName = C_TransmogCollection.GetIllusionStrings(frame.visualInfo.sourceID)
+                if enchantName then
+                    enchantName = enchantName:match("([^%[]+)") or enchantName
+                    CM:PrintChat(format("enchant -> %s", enchantName))
+                else
+                    CM:PrintChat(format("enchant -> applied (visual %d)", visualID))
+                end
+            end
+        else
+            CM:PrintChat("Unsupported enchant slot: " .. tostring(loc.slotID))
+        end
+    end
+    
+    C_Timer.After(0.3, function()
+        CM:SetTrackingBlock(false)
+    end)
 end
 
 -- Hooks initialization - com prevenção de hooks duplos
@@ -737,11 +747,10 @@ function CM:ReinitializeWardrobeHooks()
     
     print("|cff00ff00ClickMorph:|r Re-initializing wardrobe hooks...")
 
-    -- Hook para SETS do wardrobe (Alt+Shift+Click)
+    -- Hook para SETS
     if WardrobeCollectionFrame and WardrobeCollectionFrame.SetsCollectionFrame then
         local setsFrame = WardrobeCollectionFrame.SetsCollectionFrame
         if setsFrame.Model then
-            -- Usar HookScript para não quebrar o drag do modelo
             setsFrame.Model:HookScript("OnMouseUp", function(self, button)
                 if button == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
                     print("|cff00ff00ClickMorph:|r Alt+Shift+Click detected on wardrobe set!")
@@ -749,23 +758,24 @@ function CM:ReinitializeWardrobeHooks()
                 end
             end)
             print("|cff00ff00ClickMorph:|r Wardrobe Sets hook applied successfully")
-        else
-            print("|cffff6666ClickMorph:|r Wardrobe Sets Model not found")
         end
-    else
-        print("|cffff6666ClickMorph:|r Wardrobe SetsCollectionFrame not found")
     end
     
-    -- Hook para ITEMS individuais do wardrobe (Alt+Shift+Click)
+    -- Hook para ITEMS individuais
     if WardrobeCollectionFrame and WardrobeCollectionFrame.ItemsCollectionFrame then
         local itemsFrame = WardrobeCollectionFrame.ItemsCollectionFrame
         if itemsFrame.Models then
             local modelsHooked = 0
             for i, model in pairs(itemsFrame.Models) do
                 if model then
+                    -- ADICIONAR: Hook OnMouseDown para salvar modelo clicado
+                    model:HookScript("OnMouseDown", function(self)
+                        CM.lastClickedModel = self
+                    end)
+                    
+                    -- Hook OnMouseUp para morphar
                     model:HookScript("OnMouseUp", function(self, button)
                         if button == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
-                            print("|cff00ff00ClickMorph:|r Alt+Shift+Click detected on wardrobe item!")
                             CM.MorphTransmogItem(self)
                         end
                     end)
@@ -773,16 +783,339 @@ function CM:ReinitializeWardrobeHooks()
                 end
             end
             print("|cff00ff00ClickMorph:|r Wardrobe Items hooks applied (" .. modelsHooked .. " models)")
-        else
-            print("|cffff6666ClickMorph:|r Wardrobe Items Models not found")
         end
-    else
-        print("|cffff6666ClickMorph:|r Wardrobe ItemsCollectionFrame not found")
     end
+	CM:InstallWardrobeModelHooks()
+    CM:HookBetterWardrobeItems()
+    
+    return true 
+end
+
+
+-- PATCH COMPLETO PARA CLICKMORPH.LUA
+-- Baseado na arquitetura do WeaponSystem.lua
+-- Cole ANTES de InitializeHooks() (linha ~800)
+
+-- ==================== SISTEMA DE DETECÇÃO DE MODELO ====================
+-- Igual WeaponSystem: guarda o último modelo clicado
+CM.lastClickedModel = nil
+
+-- Instalar hooks nos modelos do Wardrobe (executar quando Wardrobe abrir)
+-- SUBSTITUA a função CM:InstallWardrobeModelHooks() no ClickMorph.lua
+
+function CM:InstallWardrobeModelHooks()
+    if not C_AddOns.IsAddOnLoaded("Blizzard_Collections") then
+        return 0
+    end
+    
+    -- Detectar qual Wardrobe usar (BetterWardrobe tem prioridade)
+    local wardrobeFrame = BetterWardrobeCollectionFrame or WardrobeCollectionFrame
+    local wardrobeName = BetterWardrobeCollectionFrame and "BetterWardrobe" or "Wardrobe"
+    
+    if CM.debugWardrobe then
+        print("|cff00ccff[CM Debug]|r Using:", wardrobeName)
+    end
+    
+    local itemsFrame = wardrobeFrame and wardrobeFrame.ItemsCollectionFrame
+    if not itemsFrame or not itemsFrame.Models then
+        if CM.debugWardrobe then
+            print("|cff00ccff[CM Debug]|r No ItemsCollectionFrame.Models found")
+        end
+        return 0
+    end
+    
+    local hooked = 0
+    for _, model in pairs(itemsFrame.Models) do
+        if model and not model.ClickMorphModelHooked then
+            -- Hook OnMouseDown para capturar ANTES do BetterWardrobe processar
+            model:HookScript("OnMouseDown", function(self, button)
+                -- Capturar no primeiro frame possível
+                CM.lastClickedModel = self
+                
+                if CM.debugWardrobe then
+                    local visID = self.visualInfo and self.visualInfo.visualID or "NIL"
+                    print("|cff00ccff[CM Debug]|r OnMouseDown - Button:", button, "VisualID:", visID)
+                end
+            end)
+            
+            -- ADICIONAL: Hook OnMouseUp como fallback
+            model:HookScript("OnMouseUp", function(self, button)
+                -- Se lastClickedModel ainda está nil, tentar pegar aqui
+                if not CM.lastClickedModel and self.visualInfo then
+                    CM.lastClickedModel = self
+                    
+                    if CM.debugWardrobe then
+                        print("|cff00ccff[CM Debug]|r OnMouseUp fallback - VisualID:", self.visualInfo.visualID)
+                    end
+                end
+            end)
+            
+            -- CRÍTICO PARA BETTERWARDROBE: Hook direto no SetItemTransmogInfo
+            if model.SetItemTransmogInfo then
+                hooksecurefunc(model, "SetItemTransmogInfo", function(self, info)
+                    if info then
+                        -- BetterWardrobe usa 'info' com estrutura diferente
+                        local visualID = info.visualID or (info.visualInfo and info.visualInfo.visualID)
+                        
+                        if visualID then
+                            -- Guardar referência ao modelo quando ele é atualizado
+                            CM.lastClickedModel = self
+                            
+                            if CM.debugWardrobe then
+                                print("|cff00ccff[CM Debug]|r SetItemTransmogInfo - VisualID:", visualID)
+                            end
+                        end
+                    end
+                end)
+            end
+            
+            model.ClickMorphModelHooked = true
+            hooked = hooked + 1
+        end
+    end
+    
+    if hooked > 0 then
+        if CM.debugWardrobe then
+            print("|cff00ccff[CM Debug]|r Hooked", hooked, "models in", wardrobeName)
+        end
+    end
+    
+    return hooked
+end
+
+-- ==================== DETECÇÃO DE MODID (Igual WeaponSystem) ====================
+function CM:GetModIDFromWardrobe(itemID)
+    if CM.debugWardrobe then
+        print("|cff00ccff[CM Debug]|r GetModIDFromWardrobe for itemID:", itemID)
+    end
+    
+    -- Método 1: Usar lastClickedModel (MAIS PRECISO)
+    if CM.lastClickedModel and CM.lastClickedModel.visualInfo then
+        local visualID = CM.lastClickedModel.visualInfo.visualID
+        local sources = C_TransmogCollection.GetAllAppearanceSources(visualID)
+        
+        if sources and #sources > 0 then
+            local sourceInfo = C_TransmogCollection.GetSourceInfo(sources[1])
+            if sourceInfo and sourceInfo.itemID == itemID then
+                local modID = sourceInfo.itemModID or 0
+                if CM.debugWardrobe then
+                    print("|cff00ccff[CM Debug]|r ✅ LAST CLICKED - ItemID:", itemID, 
+                          "ModID:", modID, "VisualID:", visualID)
+                end
+                return modID
+            end
+        end
+    end
+    
+    -- Método 2: Fallback - procurar nos modelos visíveis
+    if CM.debugWardrobe then
+        print("|cff00ccff[CM Debug]|r Fallback: searching visible models...")
+    end
+    
+    local itemsFrame = WardrobeCollectionFrame and WardrobeCollectionFrame.ItemsCollectionFrame
+    if not itemsFrame or not itemsFrame.Models then
+        return 0
+    end
+    
+    for _, model in pairs(itemsFrame.Models) do
+        if model.visualInfo then
+            local visualID = model.visualInfo.visualID
+            local sources = C_TransmogCollection.GetAllAppearanceSources(visualID)
+            
+            if sources and #sources > 0 then
+                local sourceInfo = C_TransmogCollection.GetSourceInfo(sources[1])
+                if sourceInfo and sourceInfo.itemID == itemID then
+                    local modID = sourceInfo.itemModID or 0
+                    if CM.debugWardrobe then
+                        print("|cff00ccff[CM Debug]|r Fallback success - ItemID:", itemID, 
+                              "ModID:", modID)
+                    end
+                    return modID
+                end
+            end
+        end
+    end
+    
+    if CM.debugWardrobe then
+        print("|cff00ccff[CM Debug]|r ❌ FAILED: ItemID not found in visible models")
+    end
+    
+    return 0
+end
+
+function CM.MorphTransmogItem(frame)
+    CM:SetTrackingBlock(true)
+    
+    print("|cffff00ff[MORPH DEBUG 1]|r Function called")
+    
+    local loc = WardrobeCollectionFrame.ItemsCollectionFrame.transmogLocation
+    
+    if not frame or not frame.visualInfo then
+        print("|cffff0000[MORPH ERROR]|r Invalid frame or no visualInfo")
+        CM:SetTrackingBlock(false)
+        return
+    end
+    
+    local visualID = frame.visualInfo.visualID
+    print("|cffff00ff[MORPH DEBUG 2]|r VisualID:", visualID)
+
+    if loc:IsAppearance() then
+        local sources = C_TransmogCollection.GetAllAppearanceSources(visualID)
+        
+        if sources and #sources > 0 then
+            local sourceInfo = C_TransmogCollection.GetSourceInfo(sources[1])
+            if sourceInfo then
+                local itemID = sourceInfo.itemID
+                print("|cffff00ff[MORPH DEBUG 3]|r ItemID from sourceInfo:", itemID)
+                
+                -- DETECÇÃO HÍBRIDA DE MODID
+                local itemModID = CM:GetModIDFromWardrobe(itemID)
+                print("|cffff00ff[MORPH DEBUG 4]|r ModID from GetModIDFromWardrobe:", itemModID)
+                
+                -- Fallback: se detecção falhou, usar do sourceInfo
+                if itemModID == 0 then
+                    itemModID = sourceInfo.itemModID or 0
+                    print("|cffff00ff[MORPH DEBUG 5]|r Using fallback modID from sourceInfo:", itemModID)
+                end
+                
+                print("|cffff00ff[MORPH DEBUG 6]|r FINAL - ItemID:", itemID, "ModID:", itemModID)
+                
+                local morph = CM:CanMorph()
+                if morph and morph.item then
+                    local slotID = C_Transmog.GetSlotForInventoryType(sourceInfo.invType)
+                    if slotID then
+                        slotID = CM:GetDualWieldSlot(slotID)
+                        
+                        print("|cffff00ff[MORPH DEBUG 7]|r Calling morph.item with slotID:", slotID, "itemID:", itemID, "modID:", itemModID)
+                        morph.item("player", slotID, itemID, itemModID)
+                        
+                        if itemModID > 0 then
+                            CM:PrintChat(format("%s -> %d:%d %s", 
+                                CM.SlotNames[slotID], itemID, itemModID, sourceInfo.name))
+                        else
+                            CM:PrintChat(format("%s -> %d %s", 
+                                CM.SlotNames[slotID], itemID, sourceInfo.name))
+                        end
+                    end
+                else
+                    print("|cffff0000[MORPH ERROR]|r Morph system not available")
+                end
+            end
+        end
+    elseif loc:IsIllusion() then
+        -- Enchant code...
+    end
+    
+    C_Timer.After(0.3, function()
+        CM:SetTrackingBlock(false)
+    end)
+end
+
+-- ==================== ATUALIZAR CM:ReinitializeWardrobeHooks ====================
+-- Procure por "function CM:ReinitializeWardrobeHooks" e SUBSTITUA por:
+
+function CM:ReinitializeWardrobeHooks()
+    if not C_AddOns.IsAddOnLoaded("Blizzard_Collections") then
+        print("|cffff6666ClickMorph:|r Blizzard_Collections not loaded yet")
+        return false
+    end
+    
+    print("|cff00ff00ClickMorph:|r Re-initializing wardrobe hooks...")
+
+    -- Hook para SETS
+    if WardrobeCollectionFrame and WardrobeCollectionFrame.SetsCollectionFrame then
+        local setsFrame = WardrobeCollectionFrame.SetsCollectionFrame
+        if setsFrame.Model then
+            setsFrame.Model:HookScript("OnMouseUp", function(self, button)
+                if button == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
+                    print("|cff00ff00ClickMorph:|r Alt+Shift+Click detected on wardrobe set!")
+                    CM.MorphTransmogSet()
+                end
+            end)
+            print("|cff00ff00ClickMorph:|r Wardrobe Sets hook applied successfully")
+        end
+    end
+    
+    -- Hook para ITEMS individuais
+    if WardrobeCollectionFrame and WardrobeCollectionFrame.ItemsCollectionFrame then
+        local itemsFrame = WardrobeCollectionFrame.ItemsCollectionFrame
+        if itemsFrame.Models then
+            local modelsHooked = 0
+            for i, model in pairs(itemsFrame.Models) do
+                if model then
+                    -- Hook OnMouseUp para morphar
+                    model:HookScript("OnMouseUp", function(self, button)
+                        if button == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
+                            CM.MorphTransmogItem(self)
+                        end
+                    end)
+                    modelsHooked = modelsHooked + 1
+                end
+            end
+            print("|cff00ff00ClickMorph:|r Wardrobe Items hooks applied (" .. modelsHooked .. " models)")
+        end
+    end
+    
+    -- Instalar hooks de detecção de click nos modelos
+    CM:InstallWardrobeModelHooks()
     
     return true
 end
 
+-- ==================== ATUALIZAR InitializeHooks ====================
+-- Dentro de InitializeHooks(), ADICIONAR após os hooks do Wardrobe:
+
+-- (Procure onde tem "Wardrobe Items hooks initialized" e adicione logo depois:)
+
+-- Hook para reinstalar quando Wardrobe abrir/atualizar
+if WardrobeCollectionFrame and not WardrobeCollectionFrame.ClickMorphOnShowHooked then
+    WardrobeCollectionFrame:HookScript("OnShow", function()
+        C_Timer.After(0.5, function()
+            CM:InstallWardrobeModelHooks()
+        end)
+    end)
+    WardrobeCollectionFrame.ClickMorphOnShowHooked = true
+end
+
+-- ==================== COMANDOS DE DEBUG ====================
+-- Adicione ao final do arquivo:
+
+CM.debugWardrobe = false
+
+SLASH_CLICKMORPH_DEBUGWARD1 = "/cmdebugward"
+SlashCmdList.CLICKMORPH_DEBUGWARD = function()
+    CM.debugWardrobe = not CM.debugWardrobe
+    print("|cff00ff00ClickMorph:|r Wardrobe debug", CM.debugWardrobe and "ON" or "OFF")
+end
+
+SLASH_CLICKMORPH_TESTMODEL1 = "/cmtestmodel"
+SlashCmdList.CLICKMORPH_TESTMODEL = function()
+    print("|cff00ff00=== Model Detection Test ===|r")
+    
+    if CM.lastClickedModel then
+        if CM.lastClickedModel.visualInfo then
+            local vis = CM.lastClickedModel.visualInfo
+            print("✅ Last clicked model:")
+            print("  VisualID:", vis.visualID)
+            print("  SourceID:", vis.sourceID)
+            
+            local sources = C_TransmogCollection.GetAllAppearanceSources(vis.visualID)
+            if sources and #sources > 0 then
+                local sourceInfo = C_TransmogCollection.GetSourceInfo(sources[1])
+                if sourceInfo then
+                    print("  ItemID:", sourceInfo.itemID)
+                    print("  ItemModID:", sourceInfo.itemModID or 0)
+                    print("  Name:", sourceInfo.name)
+                end
+            end
+        else
+            print("❌ Last clicked model has no visualInfo")
+        end
+    else
+        print("❌ No model clicked yet")
+        print("Click on a wardrobe item first!")
+    end
+end
 
 -- Função principal de inicialização de hooks - VERSÃO CORRIGIDA
 function InitializeHooks()
@@ -793,7 +1126,9 @@ function InitializeHooks()
     
     print("|cff00ff00ClickMorph:|r Initializing all hooks...")
     
-    -- Mount Journal hooks (Alt+Shift+Click)
+   -- Mount Journal hooks (Alt+Shift+Click)
+-- DESABILITADO - Agora usa o sistema do ShowAll.lua com HookScript
+--[[
     if MountJournal then
         local mountDisplay = MountJournal.MountDisplay
         if mountDisplay then
@@ -816,6 +1151,7 @@ function InitializeHooks()
             end
         end
     end
+--]]
     
     -- Wardrobe hooks - usar função específica
     CM:ReinitializeWardrobeHooks()
@@ -909,3 +1245,122 @@ hookRetryFrame:SetScript("OnEvent", function(self, event, addonName)
         self:UnregisterEvent("ADDON_LOADED")
     end
 end)
+
+-- ADICIONE AO FINAL DO CLICKMORPH.LUA (depois de tudo)
+-- Sistema de auto-instalação dos hooks do Wardrobe
+
+-- Frame para monitorar quando Collections carregar
+local wardrobeHookInstaller = CreateFrame("Frame")
+wardrobeHookInstaller:RegisterEvent("ADDON_LOADED")
+
+wardrobeHookInstaller:SetScript("OnEvent", function(self, event, addon)
+    if addon == "Blizzard_Collections" then
+        print("|cff00ff00ClickMorph:|r Blizzard_Collections loaded, installing model hooks...")
+        
+        -- Delay para garantir que tudo está pronto
+        C_Timer.After(1, function()
+            if CM and CM.InstallWardrobeModelHooks then
+                local hooked = CM:InstallWardrobeModelHooks()
+                if hooked > 0 then
+                    print("|cff00ff00ClickMorph:|r Model hooks installed -", hooked, "models")
+                else
+                    print("|cffff6666ClickMorph:|r Failed to install model hooks - retrying...")
+                    C_Timer.After(2, function()
+                        CM:InstallWardrobeModelHooks()
+                    end)
+                end
+            end
+        end)
+        
+        self:UnregisterEvent("ADDON_LOADED")
+    end
+end)
+
+-- Hook para reinstalar quando Wardrobe abrir (caso Collections já esteja carregado)
+if C_AddOns.IsAddOnLoaded("Blizzard_Collections") then
+    C_Timer.After(2, function()
+        if WardrobeCollectionFrame and not WardrobeCollectionFrame.ClickMorphAutoHookInstalled then
+            WardrobeCollectionFrame:HookScript("OnShow", function()
+                print("|cff00ff00ClickMorph:|r Wardrobe opened, checking model hooks...")
+                C_Timer.After(0.5, function()
+                    if CM and CM.InstallWardrobeModelHooks then
+                        CM:InstallWardrobeModelHooks()
+                    end
+                end)
+            end)
+            WardrobeCollectionFrame.ClickMorphAutoHookInstalled = true
+            
+            -- Instalar imediatamente se já está aberto
+            if WardrobeCollectionFrame:IsShown() then
+                C_Timer.After(0.5, function()
+                    CM:InstallWardrobeModelHooks()
+                end)
+            end
+        end
+    end)
+end
+
+-- Comando para forçar reinstalação manual
+SLASH_CLICKMORPH_INSTALLHOOKS1 = "/cminstallhooks"
+SlashCmdList.CLICKMORPH_INSTALLHOOKS = function()
+    if not CM or not CM.InstallWardrobeModelHooks then
+        print("|cffff0000Error:|r CM.InstallWardrobeModelHooks not found")
+        return
+    end
+    
+    if not C_AddOns.IsAddOnLoaded("Blizzard_Collections") then
+        print("|cffff6666Warning:|r Blizzard_Collections not loaded yet")
+        print("Open Collections (Shift+P) first, then try again")
+        return
+    end
+    
+    if not WardrobeCollectionFrame then
+        print("|cffff6666Warning:|r WardrobeCollectionFrame not found")
+        return
+    end
+    
+    print("|cff00ff00ClickMorph:|r Installing model hooks manually...")
+    local hooked = CM:InstallWardrobeModelHooks()
+    
+    if hooked > 0 then
+        print("|cff00ff00Success:|r", hooked, "models hooked")
+        print("Now click on a wardrobe item and use /cmtestmodel")
+    else
+        print("|cffff0000Failed:|r No models hooked")
+        print("Make sure you're in the Items tab of Collections")
+    end
+end
+
+-- Hook específico para ITEMS individuais no BetterWardrobe
+function CM:HookBetterWardrobeItems()
+    local wardrobeFrame = BetterWardrobeCollectionFrame or WardrobeCollectionFrame
+    
+    if not wardrobeFrame or not wardrobeFrame.ItemsCollectionFrame then
+        return 0
+    end
+    
+    local itemsFrame = wardrobeFrame.ItemsCollectionFrame
+    if not itemsFrame.Models then
+        return 0
+    end
+    
+    local hooked = 0
+    for _, model in pairs(itemsFrame.Models) do
+        if model and not model.BetterWardrobeItemHooked then
+            model:HookScript("OnMouseUp", function(self, button)
+                if button == "LeftButton" and IsAltKeyDown() and IsShiftKeyDown() then
+                    print("|cff00ff00ClickMorph:|r Alt+Shift+Click on individual item!")
+                    CM.MorphTransmogItem(self)
+                end
+            end)
+            model.BetterWardrobeItemHooked = true
+            hooked = hooked + 1
+        end
+    end
+    
+    if hooked > 0 then
+        print("|cff00ff00ClickMorph:|r BetterWardrobe Items hooked:", hooked, "models")
+    end
+    
+    return hooked
+end
